@@ -1,0 +1,2516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPR Kill Team VTT</title>
+    <!-- Tailwind CSS for UI styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        canvas { touch-action: none; }
+        .token-card {
+            cursor: grab;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .token-card:active {
+            cursor: grabbing;
+        }
+    
+        @media (max-width: 1023px) {
+            header { flex-wrap: wrap; gap: .35rem; padding: .35rem .6rem !important; }
+            header .text-xl { font-size: .95rem; }
+            .side-drawer { position: fixed !important; top: 0; bottom: 0; z-index: 45 !important; width: min(86vw, 18rem) !important; transition: transform .2s; padding-bottom: 3.75rem !important; }
+            #leftPanel { left: 0; transform: translateX(-105%); }
+            #rightPanel { right: 0; transform: translateX(105%); }
+            #leftPanel.open, #rightPanel.open { transform: none; }
+            main > .pointer-events-none { display: none; }
+            main > .top-3 { right: .5rem !important; }
+            #p1ReservesBox, #p2ReservesBox { top: auto !important; bottom: 3.5rem; left: .5rem !important; right: 4rem !important; transform: none !important; width: auto !important; padding: .35rem !important; }
+            #p1ReservesBox > div:first-child, #p2ReservesBox > div:first-child { display: none; }
+            #p1ReservesList, #p2ReservesList { display: flex !important; overflow-x: auto; max-height: none !important; }
+            #p1ReservesList > *, #p2ReservesList > * { min-width: 4.5rem; }
+            body[data-role="P1"] #p2ReservesBox, body[data-role="P2"] #p1ReservesBox, body[data-role="S"] #p2ReservesBox { display: none; }
+            .empty-res { display: none !important; }
+            #attackerModal > div, #defenderModal > div, #casualtyModal > div { width: 94vw !important; }
+        }
+        body { touch-action: manipulation; }
+    .sbtn { background:#334155; border:1px solid #475569; border-radius:.375rem; padding:.2rem .5rem; }
+        .sbtn:hover { background:#475569; } .sbtn:disabled { opacity:.4; pointer-events:none; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-slate-800 border-b border-slate-700 px-4 py-2.5 flex justify-between items-center shadow-md z-10">
+        <div class="flex items-center space-x-3">
+            <span class="text-xl font-bold tracking-wider text-amber-500">🛡️ OPR Kill Team VTT</span>
+            <span id="gamePhaseBadge" class="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/50 px-2.5 py-1 rounded font-semibold">Phase: Placement Roll-Off</span>
+        </div>
+        <div class="flex items-center space-x-4 text-sm">
+            <div id="roundBadge" class="bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-semibold text-amber-400 hidden">
+                Round: <span id="roundCounterNum">1</span> / 4
+            </div>
+            <div class="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span id="activePlayerDot" class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span>
+                <span id="activePlayerLabel" class="font-medium text-blue-400">Turn: Player 1</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 text-xs"><span id="netDot" class="w-2.5 h-2.5 rounded-full bg-slate-500 inline-block"></span><span id="netText">Connecting...</span><button onclick="leaveGame()" class="text-slate-400 hover:text-red-400 underline">Leave</button></div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Left Panel: Terrain & Tools -->
+        <aside id="leftPanel" class="side-drawer w-72 bg-slate-800 border-r border-slate-700 flex flex-col z-10 shadow-lg">
+            
+            <div class="p-3 bg-red-950/40 border-b border-red-900/50">
+                <button onclick="autoDeployTest()" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-1.5 px-2 rounded text-xs transition shadow flex items-center justify-center space-x-1">
+                    <span>🚀 Auto-Deploy & Objectives (Teste)</span>
+                </button>
+            </div>
+
+            <!-- Tabs Header -->
+            <div class="flex border-b border-slate-700 bg-slate-850">
+                <button onclick="switchTab('setup')" id="tab-setup" class="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider text-amber-500 border-b-2 border-amber-500 transition">Setup</button>
+                <button onclick="switchTab('tools')" id="tab-tools" class="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition">Tools</button>
+                <button onclick="switchTab('objectives')" id="tab-objectives" class="flex-1 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition">Objectives</button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="flex-1 overflow-y-auto p-3 space-y-3">
+                <div id="panel-setup" class="space-y-3">
+<div id="setupCard" class="hidden bg-slate-900/95 border border-amber-500/50 rounded-xl text-xs">
+        <div class="flex items-center justify-between px-3 py-2 border-b border-slate-700">
+            <span class="font-bold text-amber-400 uppercase">⚙ Game setup</span>
+            <button id="setupMin" class="px-2 text-slate-300">▾</button>
+        </div>
+        <div class="host-only hidden px-3 py-2 border-b border-slate-800">
+            <div class="flex flex-wrap gap-1 items-center">
+                <span class="text-slate-400">Selected terrain:</span>
+                <button id="rotL" class="sbtn">⟲ 15°</button><button id="rotR" class="sbtn">⟳ 15°</button><button id="rot90" class="sbtn">⟳ 90°</button><button id="delTerrain" class="sbtn text-red-300">🗑</button>
+            </div>
+        </div>
+        <div id="setupBody" class="p-3 space-y-3 overflow-y-auto max-h-[52vh]">
+            <div id="setupSummary" class="text-slate-300"></div>
+            <div class="host-only hidden space-y-3">
+                <div>
+                    <div class="font-semibold text-slate-400 uppercase mb-1">Rules</div>
+                    <div class="flex gap-2"><button data-mode="demo" class="sbtn flex-1">Demo</button><button data-mode="advanced" class="sbtn flex-1">Advanced</button></div>
+                    <p id="modeInfo" class="text-slate-500 mt-1"></p>
+                </div>
+                <div>
+                    <div class="font-semibold text-slate-400 uppercase mb-1">Battlefield</div>
+                    <div class="text-amber-400 font-bold mb-2">3' × 3' fixed board</div>
+                    <div id="mapPool" class="grid grid-cols-2 gap-2">
+                        <button type="button" data-map="grass" class="map-choice overflow-hidden rounded-lg border border-slate-700 bg-slate-800 text-left">
+                            <img src="/maps/grass-and-rocks.jpg" alt="Grass & Rocks" class="w-full h-20 object-cover">
+                            <span class="block px-2 py-1 text-[10px] font-bold">Grass & Rocks</span>
+                        </button>
+                        <button type="button" data-map="industrial" class="map-choice overflow-hidden rounded-lg border border-slate-700 bg-slate-800 text-left">
+                            <img src="/maps/industrial.jpg" alt="Industrial" class="w-full h-20 object-cover">
+                            <span class="block px-2 py-1 text-[10px] font-bold">Industrial</span>
+                        </button>
+                    </div>
+                    <div class="pt-2 border-t border-slate-800">
+                        <div class="font-semibold text-slate-400 uppercase mb-1">Terrain pieces</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="setTerrainTool('ruin_l')" id="btn-terrain-ruin_l" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-left border border-slate-600 transition"><div class="font-bold text-xs text-amber-400">📐 L-Ruin</div><div class="text-[10px] text-slate-400">Large</div></button>
+                            <button onclick="setTerrainTool('ruin_i')" id="btn-terrain-ruin_i" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-left border border-slate-600 transition"><div class="font-bold text-xs text-amber-400">📏 I-Ruin</div><div class="text-[10px] text-slate-400">Large</div></button>
+                            <button onclick="setTerrainTool('ruin_l_small')" id="btn-terrain-ruin_l_small" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-left border border-slate-600 transition"><div class="font-bold text-xs text-amber-400">⌞ Small L</div><div class="text-[10px] text-slate-400">Small</div></button>
+                            <button onclick="setTerrainTool('ruin_i_small')" id="btn-terrain-ruin_i_small" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-left border border-slate-600 transition"><div class="font-bold text-xs text-amber-400">━ Small I</div><div class="text-[10px] text-slate-400">Small</div></button>
+                        </div>
+                        <button onclick="loadStartupTerrain()" class="w-full mt-2 bg-amber-700/40 hover:bg-amber-700/60 border border-amber-500/50 py-1.5 rounded text-xs text-amber-200 font-semibold">↻ Load Startup Terrain (12 pieces)</button>
+                    </div>
+                    <p class="text-slate-500 mt-1">Choose a battlefield from the map pool. The selected map is automatically fitted to the full 3' × 3' board.</p>
+                    <div class="flex flex-wrap gap-1 mt-2">
+                        <button id="mapExport" class="sbtn">Export map</button>
+                        <label class="sbtn cursor-pointer">Import map<input id="mapImport" type="file" accept=".json,application/json" class="hidden"></label>
+                    </div>
+                </div>
+            </div>
+            <div class="player-only hidden space-y-1">
+                <div class="font-semibold text-slate-400 uppercase">Your list</div>
+                <div id="listInfo" class="text-slate-300"></div>
+                <label class="block">Upload list (.json)<input id="listFile" type="file" accept=".json,application/json" class="block w-full mt-1"></label>
+                <div class="flex gap-1"><button id="listDemo" class="sbtn">Use demo list</button><button id="listExample" class="sbtn">Download example</button></div>
+            </div>
+            <div id="setupErr" class="text-red-400"></div>
+        </div>
+        <div class="player-only hidden px-3 py-2 border-t border-slate-700">
+            <div class="flex items-center gap-2"><button id="btnReady" class="bg-emerald-600 hover:bg-emerald-500 font-bold px-3 py-1.5 rounded">Ready</button><span id="readyInfo" class="text-slate-400"></span></div>
+        </div>
+    </div>
+                </div>
+                
+                <!-- TERRAIN TAB -->
+                
+
+                <!-- TOOLS TAB -->
+                <div id="panel-tools" class="space-y-3 hidden">
+                    <div class="bg-slate-900 p-2.5 rounded-lg border border-slate-700">
+                        <h3 class="text-xs font-semibold uppercase text-slate-400 mb-2">OPR Dice Roller</h3>
+                        <div class="flex space-x-2 mb-2">
+                            <input type="number" id="diceCount" value="6" class="w-14 bg-slate-800 border border-slate-700 rounded p-1 text-xs text-center">
+                            <select id="targetQuality" class="flex-1 bg-slate-800 border border-slate-700 rounded p-1 text-xs">
+                                <option value="2">Target Q2+</option>
+                                <option value="3" selected>Target Q3+</option>
+                                <option value="4">Target Q4+</option>
+                                <option value="5">Target Q5+</option>
+                            </select>
+                            <button onclick="rollOPRDice()" class="bg-amber-600 hover:bg-amber-500 px-3 py-1 rounded text-xs font-medium">Roll</button>
+                        </div>
+                        <div id="diceResults" class="text-xs text-slate-300 bg-slate-800 p-2 rounded min-h-[32px] flex items-center justify-center text-center">Results here...</div>
+                    </div>
+
+                    <div class="bg-slate-900 p-2.5 rounded-lg border border-slate-700 flex flex-col h-40">
+                        <h3 class="text-xs font-semibold uppercase text-slate-400 mb-1">Battle Log</h3>
+                        <div id="battleLog" class="flex-1 bg-slate-950 p-2 rounded text-[10px] font-mono overflow-y-auto space-y-1 text-slate-300">
+                            <div>[System] Kill Team VTT Initialized. Reserves loaded beside map.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OBJECTIVES TAB -->
+                <div id="panel-objectives" class="space-y-3 hidden">
+                    <h3 class="text-xs font-semibold uppercase text-amber-400">Objective Control</h3>
+                    <p class="text-[10px] text-slate-400">Units within 3" claim/contest markers.</p>
+                    <div id="objectiveTrackerList" class="space-y-2 text-xs">
+                        <div class="text-slate-500 italic">No objectives placed yet.</div>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- Center: Interactive Canvas Battleboard with Floating Reserve Boxes -->
+        <main class="flex-1 relative bg-slate-950 overflow-hidden flex items-center justify-center">
+            
+            <!-- Player 1 Reserves Floating Box -->
+            <div id="p1ReservesBox" class="absolute left-4 top-1/2 -translate-y-1/2 bg-slate-900/90 border border-blue-500/50 backdrop-blur p-3 rounded-xl shadow-2xl z-20 w-44 space-y-2">
+                <div class="border-b border-slate-800 pb-1">
+                    <h3 class="text-xs font-bold uppercase text-blue-400">PLAYER 1 RESERVES</h3>
+                    <p class="text-[9px] text-slate-400">Click token, then click P1 Zone.</p>
+                </div>
+                <div id="p1ReservesList" class="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto"></div>
+            </div>
+
+            <canvas id="vttCanvas" class="cursor-grab active:cursor-grabbing border border-slate-700 shadow-2xl w-full h-full"></canvas>
+            
+            <!-- Player 2 Reserves Floating Box -->
+            <div id="p2ReservesBox" class="absolute right-4 top-1/2 -translate-y-1/2 bg-slate-900/90 border border-red-500/50 backdrop-blur p-3 rounded-xl shadow-2xl z-20 w-44 space-y-2">
+                <div class="border-b border-slate-800 pb-1">
+                    <h3 class="text-xs font-bold uppercase text-red-400">PLAYER 2 RESERVES</h3>
+                    <p class="text-[9px] text-slate-400">Click token, then click P2 Zone.</p>
+                </div>
+                <div id="p2ReservesList" class="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto"></div>
+            </div>
+
+            <!-- Canvas HUD Overlay -->
+            <div class="absolute bottom-3 left-48 bg-slate-900/90 border border-slate-700 backdrop-blur px-2.5 py-1.5 rounded-lg text-[11px] flex items-center space-x-3 shadow-xl pointer-events-none">
+                <div>Scale: <span class="font-mono text-amber-400">1" = 35px</span></div>
+                <div>Kill Team Board: <span class="font-mono text-slate-300">36" x 36" (3′ × 3′)</span></div>
+                <div>Zoom: <span id="zoomLevel" class="font-mono text-slate-300">100%</span></div>
+            </div>
+
+            <!-- Reset View / Center Button -->
+            <div class="absolute top-3 right-48 flex space-x-2 z-20">
+                <button onclick="resetZoom()" class="bg-slate-800/90 hover:bg-slate-700 border border-slate-700 px-2.5 py-1 rounded text-xs shadow-lg transition">Recenter</button>
+            </div>
+        </main>
+
+        <!-- Right Sidebar: Game Phases & Selected Unit Inspector -->
+        <aside id="rightPanel" class="side-drawer w-72 bg-slate-800 border-l border-slate-700 flex flex-col z-10 shadow-lg p-3 space-y-3 overflow-y-auto">
+            <div>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-amber-500 mb-2 border-b border-slate-700 pb-1">⚡ GAME PHASES</h2>
+            </div>
+
+            <!-- Objective Setup Roll-off Section -->
+            <div id="objectiveRollBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-700 space-y-1.5">
+                <h3 class="text-xs font-semibold uppercase text-amber-400">Placement Roll-Off</h3>
+                <p class="text-[10px] text-slate-400">Roll D6 to determine who places 1st marker.</p>
+                <div class="pt-0.5">
+                    <button id="btnRollPlacement" onclick="rollObjectiveInitiative()" class="w-full bg-amber-600 hover:bg-amber-500 text-white text-xs py-1.5 rounded font-medium transition shadow">🎲 Roll-Off for Placement</button>
+                </div>
+                <div id="objRollResult" class="text-[10px] text-slate-300 bg-slate-800 p-1.5 rounded text-center">Not rolled yet.</div>
+            </div>
+
+            <!-- Objective Count Roll Section -->
+            <div id="objectiveCountBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-700 space-y-1.5 hidden">
+                <h3 class="text-xs font-semibold uppercase text-amber-400">Roll Objectives (D3 + 2)</h3>
+                <p class="text-[10px] text-slate-400">Rolls D3 and adds 2 (3 to 5 total markers).</p>
+                <div class="pt-0.5">
+                    <button id="btnRollObjCount" onclick="rollObjectiveCount()" class="w-full bg-amber-600 hover:bg-amber-500 text-white text-xs py-1.5 rounded font-medium transition shadow">🎲 Roll Marker Count</button>
+                </div>
+                <div id="objCountResult" class="text-[10px] text-slate-300 bg-slate-800 p-1.5 rounded text-center">Not rolled yet.</div>
+            </div>
+
+            <!-- Deployment Roll-off Section -->
+            <div id="deploymentRollBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-700 space-y-1.5 hidden">
+                <h3 class="text-xs font-semibold uppercase text-amber-400">Deployment Roll-Off</h3>
+                <p class="text-[10px] text-slate-400">Roll D6 to determine deployment order.</p>
+                <div class="pt-0.5">
+                    <button id="btnRollDeployment" onclick="rollDeploymentInitiative()" class="w-full bg-amber-600 hover:bg-amber-500 text-white text-xs py-1.5 rounded font-medium transition shadow">🎲 Roll-Off for Deployment</button>
+                </div>
+                <div id="rollOffResult" class="text-[10px] text-slate-300 bg-slate-800 p-1.5 rounded text-center">Not rolled yet.</div>
+            </div>
+
+            <!-- Battle Phase Status -->
+            <div id="battlePhaseBox" class="bg-slate-900 p-2.5 rounded-lg border border-slate-700 space-y-1.5 hidden">
+                <h3 class="text-xs font-semibold uppercase text-emerald-400">Battle Round Status</h3>
+                <div class="text-[10px] text-slate-300 bg-slate-800 p-1.5 rounded space-y-0.5">
+                    <div>Current Round: <strong id="sidebarRoundNum" class="text-amber-400">1</strong> / 4</div>
+                    <div>Markers Deployed: <strong id="sidebarObjCount" class="text-amber-400">0</strong></div>
+                </div>
+            </div>
+
+            <!-- Selected Unit Inspector & OPR Actions Card -->
+            <div id="unitInspector" class="bg-slate-900 p-2.5 rounded-lg border border-slate-700 hidden space-y-2.5">
+                <h3 id="inspectorHeaderTitle" class="text-xs font-bold uppercase text-amber-400 tracking-wider">SELECTED UNIT</h3>
+                <div id="inspectorContent" class="text-xs space-y-1 text-slate-300"></div>
+
+                <!-- OPR Unit Actions -->
+                <div id="oprActionPanel" class="border-t border-slate-800 pt-2 space-y-1.5 hidden">
+                    <h4 class="text-[10px] font-bold uppercase text-amber-400">CHOOSE ACTIVATION ACTION</h4>
+                    <div class="grid grid-cols-2 gap-1">
+                        <button onclick="executeUnitAction('hold')" id="btnActionHold" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] py-1 rounded text-left px-2 transition">
+                            <div class="font-bold text-cyan-400">🛡 Hold</div>
+                            <div class="text-[8px] text-slate-400">0" move | Shoot</div>
+                        </button>
+                        <button onclick="executeUnitAction('advance')" id="btnActionAdvance" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] py-1 rounded text-left px-2 transition">
+                            <div class="font-bold text-yellow-400">🚶 Advance</div>
+                            <div class="text-[8px] text-slate-400">Up to 6" | Shoot</div>
+                        </button>
+                        <button onclick="executeUnitAction('rush')" id="btnActionRush" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] py-1 rounded text-left px-2 transition">
+                            <div class="font-bold text-amber-400">🏃 Rush</div>
+                            <div class="text-[8px] text-slate-400">Up to 12" | No shoot</div>
+                        </button>
+                        <button onclick="executeUnitAction('charge')" id="btnActionCharge" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] py-1 rounded text-left px-2 transition">
+                            <div class="font-bold text-red-400">⚔ Charge</div>
+                            <div class="text-[8px] text-slate-400">Up to 12" | Melee</div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Ranged Shooting Panel -->
+                <div id="shootingPanel" class="border-t border-slate-800 pt-2 space-y-1.5 hidden">
+                    <h4 class="text-[10px] font-bold uppercase text-amber-400">🎯 RANGED ATTACK</h4>
+                    <div id="weaponListContainer" class="space-y-1 text-xs"></div>
+                </div>
+
+                <!-- Melee Weapon Panel (Appears on Charge) -->
+                <div id="meleeWeaponPanel" class="border-t border-slate-800 pt-2 space-y-1.5 hidden">
+                    <h4 class="text-[10px] font-bold uppercase text-amber-400">⚔️ CHARGE TARGET SELECTION</h4>
+                    <p id="chargeInstructionText" class="text-[9px] text-amber-300 font-semibold">Click an enemy unit on the board to charge automatically!</p>
+                </div>
+
+                <!-- Confirm & Pass Turn Button -->
+                <div id="confirmActionBox" class="pt-1">
+                    <button onclick="confirmAndPassTurn()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded text-xs transition shadow flex items-center justify-center space-x-1">
+                        <span>✅ Confirm & Pass Turn</span>
+                    </button>
+                </div>
+
+                <div class="pt-0.5">
+                    <button onclick="deleteSelectedUnit()" class="w-full bg-red-900/80 hover:bg-red-800 text-red-200 px-2 py-1 rounded text-xs font-medium">Remove Unit</button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- Combat Resolution Modals (Separated for Attacker and Defender) -->
+    <div id="attackerModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-blue-500/50 w-[480px] p-4 rounded-xl shadow-2xl space-y-3 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                <h3 id="attackerModalTitle" class="text-sm font-bold text-blue-400">Attacker Turn - Attack Roll</h3>
+            </div>
+            <div id="attackerModalBody" class="space-y-2.5 text-slate-300 max-h-[70vh] overflow-y-auto pr-1"></div>
+        </div>
+    </div>
+
+    <div id="defenderModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-red-500/50 w-[480px] p-4 rounded-xl shadow-2xl space-y-3 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                <h3 id="defenderModalTitle" class="text-sm font-bold text-red-400">Defender Turn - Defense Roll</h3>
+            </div>
+            <div id="defenderModalBody" class="space-y-2.5 text-slate-300 max-h-[70vh] overflow-y-auto pr-1"></div>
+        </div>
+    </div>
+
+    <div id="casualtyModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-amber-500/50 w-[480px] p-4 rounded-xl shadow-2xl space-y-3 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                <h3 class="text-sm font-bold text-amber-400">💀 BATTLE CASUALTY REPORT</h3>
+            </div>
+            <div id="casualtyModalBody" class="space-y-2.5 text-slate-300"></div>
+        </div>
+    </div>
+
+    <div id="mobileDock" class="lg:hidden fixed bottom-2 left-2 z-[55] flex space-x-2">
+        <button onclick="toggleDrawer('leftPanel')" class="bg-slate-800 border border-slate-600 rounded-full w-11 h-11 shadow-xl text-lg">☰</button>
+        <button onclick="toggleDrawer('rightPanel')" class="bg-slate-800 border border-slate-600 rounded-full w-11 h-11 shadow-xl text-lg">⚔</button>
+    </div>
+    <button onclick="toggleChat()" class="fixed bottom-2 right-2 z-[55] bg-slate-800 border border-slate-600 rounded-full w-11 h-11 shadow-xl text-lg">💬<span id="chatBadge" class="hidden absolute -top-1 -right-1 bg-red-600 text-[10px] rounded-full px-1.5">0</span></button>
+    <div id="chatPanel" class="hidden fixed bottom-16 right-2 z-[55] w-[min(92vw,20rem)] h-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl flex flex-col">
+        <div class="px-3 py-2 border-b border-slate-800 text-xs font-bold uppercase text-amber-400">Room chat</div>
+        <div id="chatLog" class="flex-1 overflow-y-auto p-2 space-y-1 text-xs"></div>
+        <div class="p-2 border-t border-slate-800 flex space-x-2">
+            <input id="chatInput" maxlength="200" placeholder="Message…" class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs">
+            <button onclick="sendChat()" class="bg-amber-600 hover:bg-amber-500 px-3 rounded text-xs font-bold">Send</button>
+        </div>
+    </div>
+    
+
+    <div id="waitBanner" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 border border-amber-500/60 rounded-xl px-4 py-2 shadow-2xl text-sm flex items-center space-x-3">
+        <span class="animate-pulse">⏳</span><span id="waitText">Waiting for opponent…</span>
+        <button onclick="cancelWait()" class="text-[10px] text-slate-400 hover:text-red-400 underline">cancel</button>
+    </div>
+    <!-- Application Logic Script -->
+    <script>
+        const canvas = document.getElementById('vttCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const PIXELS_PER_INCH = 35;
+        const FIXED_TABLE_INCHES = 36;
+        let TABLE_WIDTH_INCHES = FIXED_TABLE_INCHES;
+        let TABLE_HEIGHT_INCHES = FIXED_TABLE_INCHES;
+        let TABLE_WIDTH = TABLE_WIDTH_INCHES * PIXELS_PER_INCH;   // 1260px
+        let TABLE_HEIGHT = TABLE_HEIGHT_INCHES * PIXELS_PER_INCH; // 1260px
+        const UNIT_RADIUS = 24; 
+        const DEPLOYMENT_ZONE_WIDTH = 6 * PIXELS_PER_INCH; // 210px
+
+        let myRole = null, netBusy = false;
+        let selectedTerrainId = null, dragTerrain = null, mapBgImg = null;
+        let gamePhase = 'setup';
+        let activeTurn = 'P1';
+        let currentRound = 1;
+        let totalObjectivesToDeploy = 0;
+        let objectivesRemaining = 0; 
+        let objectives = [];
+
+        let reserves = [
+            { id: 101, name: "Prime Warr", faction: "P1", q: 4, d: 4, t: 18, weapons: [{name: "Claws", rng: "Melee", atk: 6, ap: 0}, {name: "Stomp", rng: "Melee", atk: 4, ap: 1}], isFatigued: false },
+            { id: 102, name: "Assault Gr", faction: "P1", q: 5, d: 5, t: 3, weapons: [{name: "Toxin Claws", rng: "Melee", atk: 6, ap: 0}], isFatigued: false },
+            { id: 103, name: "Shooter Gr", faction: "P1", q: 5, d: 5, t: 3, weapons: [{name: "Bio-Ravagers", rng: 18, atk: 6, ap: 0}, {name: "Claws", rng: "Melee", atk: 6, ap: 0}], isFatigued: false },
+            { id: 104, name: "Soul-Snat", faction: "P1", q: 3, d: 4, t: 3, weapons: [{name: "Serrated Claws", rng: "Melee", atk: 2, ap: 2}], isFatigued: false },
+            
+            { id: 201, name: "Lider", faction: "P2", q: 3, d: 3, t: 9, weapons: [{name: "Pistol", rng: 12, atk: 2, ap: 0}, {name: "Energy Sword", rng: "Melee", atk: 6, ap: 0}], isFatigued: false },
+            { id: 202, name: "Rifle Bro", faction: "P2", q: 3, d: 3, t: 3, weapons: [{name: "Anti-Matter Rifle", rng: 24, atk: 2, ap: 1}, {name: "Strike", rng: "Melee", atk: 2, ap: 0}], isFatigued: false },
+            { id: 203, name: "Espada e P", faction: "P2", q: 3, d: 3, t: 3, weapons: [{name: "Plasma Pistol", rng: 12, atk: 2, ap: 2}, {name: "Energy Sword", rng: "Melee", atk: 6, ap: 0}], isFatigued: false },
+            { id: 204, name: "Flamer Bro", faction: "P2", q: 3, d: 3, t: 3, weapons: [{name: "Heavy Flamer", rng: 12, atk: 2, ap: 1}, {name: "Strike", rng: "Melee", atk: 2, ap: 0}], isFatigued: false }
+        ];
+
+        let units = []; 
+        
+        function terrainWallsForType(type) {
+            if (type === 'ruin_l') return [{ x: 0, y: 0, w: 120, h: 16 }, { x: 0, y: 16, w: 16, h: 100 }];
+            if (type === 'ruin_i') return [{ x: 0, y: 0, w: 140, h: 16 }];
+            if (type === 'ruin_l_small') return [{ x: 0, y: 0, w: 70, h: 12 }, { x: 0, y: 12, w: 12, h: 60 }];
+            return [{ x: 0, y: 0, w: 80, h: 12 }];
+        }
+
+        function startupTerrainPieces() {
+            const pieces = [
+                ['ruin_l', 330, 260, 0], ['ruin_l', 930, 260, 90],
+                ['ruin_l', 330, 1000, -90], ['ruin_l', 930, 1000, 180],
+                ['ruin_i', 525, 390, 90], ['ruin_i', 735, 810, 90],
+                ['ruin_l_small', 560, 250, 0], ['ruin_l_small', 700, 1010, 180],
+                ['ruin_l_small', 470, 650, 90],
+                ['ruin_i_small', 220, 630, 90], ['ruin_i_small', 1040, 630, 90],
+                ['ruin_i_small', 630, 610, 0]
+            ];
+            return pieces.map(([type, px, py, angle], i) => {
+                const t = normalizeTerrain({ id: 100 + i, type, walls: terrainWallsForType(type) });
+                t.px = px; t.py = py; t.angle = angle; rebuildTerrain(t);
+                return t;
+            });
+        }
+
+        let terrains = startupTerrainPieces();
+
+        let selectedUnitId = null;
+        let spectatorMode = false;
+        let activeTerrainTool = null;
+        let selectedReserveId = null;
+
+        let activeShootingWeapon = null;
+        let selectedTargetUnitId = null;
+        let currentAttackData = null;
+
+        let camera = { x: 0, y: 0, zoom: 1 };
+        let isDraggingBoard = false;
+        let startPan = { x: 0, y: 0 };
+        let isDraggingUnit = false;
+        let dragStartPos = { x: 0, y: 0 };
+        let dragOffset = { x: 0, y: 0 };
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function resetZoom() {
+            camera.zoom = 1;
+            camera.x = (canvas.width - TABLE_WIDTH) / 2;
+            camera.y = (canvas.height - TABLE_HEIGHT) / 2;
+        }
+        resetZoom();
+
+        function formatRollsHTML(rolls, targetValue) {
+            return `
+                <div class="flex flex-wrap justify-center items-center gap-2 my-2">
+                    ${rolls.map(r => {
+                        const isSuccess = r >= targetValue;
+                        if (r === 6) {
+                            return `<span class="inline-flex items-center justify-center w-9 h-9 bg-amber-500 text-slate-950 font-black text-base rounded-lg shadow-md border-2 border-amber-300 scale-110" title="Critical Success (6)">${r}</span>`;
+                        } else if (r === 1) {
+                            return `<span class="inline-flex items-center justify-center w-8 h-8 bg-red-950 text-red-300 font-extrabold text-sm rounded-lg border-2 border-red-600 shadow-inner" title="Critical Fail (1)">${r}</span>`;
+                        } else if (isSuccess) {
+                            return `<span class="inline-flex items-center justify-center w-8 h-8 bg-emerald-600/90 text-white font-bold text-sm rounded-lg border border-emerald-400 shadow" title="Success (${r} >= ${targetValue})">${r}</span>`;
+                        } else {
+                            return `<span class="inline-flex items-center justify-center w-8 h-8 bg-red-900/40 text-red-200/70 font-medium text-sm rounded-lg border border-red-900/60" title="Fail (${r} < ${targetValue})">${r}</span>`;
+                        }
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function updateReservesUI() {
+            const p1List = document.getElementById('p1ReservesList');
+            const p2List = document.getElementById('p2ReservesList');
+            if (!p1List || !p2List) return;
+
+            const p1Reserves = reserves.filter(r => r.faction === 'P1');
+            const p2Reserves = reserves.filter(r => r.faction === 'P2');
+
+            p1List.innerHTML = p1Reserves.length === 0 ? `<div class="text-green-400 italic text-[11px] col-span-2">P1 deployed!</div>` : '';
+            p1Reserves.forEach(r => {
+                const isSelected = selectedReserveId === r.id;
+                p1List.innerHTML += `
+                    <div onclick="selectReserve(${r.id})" class="token-card bg-slate-800 p-2 rounded-lg border ${isSelected ? 'border-blue-500 bg-blue-500/20' : 'border-slate-700 hover:border-slate-500'} flex flex-col items-center justify-center text-center cursor-pointer">
+                        <div class="w-10 h-10 rounded-full bg-blue-600 border-2 border-white flex items-center justify-center font-bold text-white text-xs mb-1 shadow">${r.name.substring(0,3)}</div>
+                        <div class="font-bold text-[10px] text-blue-400 truncate w-full">${r.name}</div>
+                        <div class="text-[9px] text-slate-400">Q${r.q} | T${r.t}</div>
+                    </div>
+                `;
+            });
+
+            p2List.innerHTML = p2Reserves.length === 0 ? `<div class="text-green-400 italic text-[11px] col-span-2">P2 deployed!</div>` : '';
+            p2Reserves.forEach(r => {
+                const isSelected = selectedReserveId === r.id;
+                p2List.innerHTML += `
+                    <div onclick="selectReserve(${r.id})" class="token-card bg-slate-800 p-2 rounded-lg border ${isSelected ? 'border-red-500 bg-red-500/20' : 'border-slate-700 hover:border-slate-500'} flex flex-col items-center justify-center text-center cursor-pointer">
+                        <div class="w-10 h-10 rounded-full bg-red-600 border-2 border-white flex items-center justify-center font-bold text-white text-xs mb-1 shadow">${r.name.substring(0,3)}</div>
+                        <div class="font-bold text-[10px] text-red-400 truncate w-full">${r.name}</div>
+                        <div class="text-[9px] text-slate-400">Q${r.q} | T${r.t}</div>
+                    </div>
+                `;
+            });
+        }
+        updateReservesUI();
+
+        function switchTab(tab) {
+            ['setup', 'tools', 'objectives'].forEach(t => {
+                const panel = document.getElementById(`panel-${t}`);
+                if (panel) panel.classList.toggle('hidden', t !== tab);
+                const btn = document.getElementById(`tab-${t}`);
+                if (btn) {
+                    btn.className = t === tab ? "flex-1 py-2.5 text-xs font-bold uppercase tracking-wider text-amber-500 border-b-2 border-amber-500 transition" : "flex-1 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition";
+                }
+            });
+            if (tab === 'objectives') updateObjectiveTrackerUI();
+        }
+
+        function selectReserve(id) {
+            if (gamePhase !== 'deploying') {
+                alert('Not currently in the deployment phase! Complete previous phases first.');
+                return;
+            }
+            const unit = reserves.find(r => r.id === id);
+            if (unit && (unit.faction !== activeTurn || unit.faction !== myRole)) {
+                alert(`It is Player ${activeTurn}'s turn to deploy!`);
+                return;
+            }
+            selectedReserveId = id;
+            updateReservesUI();
+            logBattle(`Selected ${unit.name} token. Click inside your deployment zone (${activeTurn}) on the board.`);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (netBusy) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left - camera.x) / camera.zoom;
+            const mouseY = (e.clientY - rect.top - camera.y) / camera.zoom;
+
+            if (gamePhase === 'setup' && myRole === 'P1' && !activeTerrainTool) {
+                const hit = terrains.find(t => terrainHit(t, mouseX, mouseY));
+                if (hit && !window.setupLocked) { selectedTerrainId = hit.id; dragTerrain = { dx: hit.px - mouseX, dy: hit.py - mouseY }; return; }
+                selectedTerrainId = null;
+            }
+            if (activeTerrainTool) {
+                if (myRole !== 'P1' || !['setup', 'objective_rolloff', 'objective_count'].includes(gamePhase)) { alert('Only the host (Player 1) can place terrain, before objectives are placed.'); setTerrainTool(null); return; }
+                let newTerrain;
+                newTerrain = { id: Date.now(), type: activeTerrainTool, walls: terrainWallsForType(activeTerrainTool) };
+                terrains.push(normalizeTerrain(newTerrain));
+                selectedTerrainId = newTerrain.id;
+                logBattle(`Placed ${activeTerrainTool} wall on Kill Team board.`);
+                activeTerrainTool = null;
+                setTerrainTool(null);
+                return;
+            }
+
+            if (gamePhase === 'placing_objectives') {
+                if (activeTurn !== myRole) { alert("It's your opponent's turn to place an objective."); return; }
+                if (mouseX < 20 || mouseX > TABLE_WIDTH - 20 || mouseY < 20 || mouseY > TABLE_HEIGHT - 20) {
+                    alert('Invalid placement: Objective must be inside map boundaries.');
+                    return;
+                }
+
+                const isInP1Zone = mouseX <= DEPLOYMENT_ZONE_WIDTH;
+                const isInP2Zone = mouseX >= TABLE_WIDTH - DEPLOYMENT_ZONE_WIDTH;
+                if (isInP1Zone || isInP2Zone) {
+                    alert('Invalid placement: Objectives cannot be placed inside deployment zones.');
+                    return;
+                }
+
+                if (checkTerrainCollision(mouseX, mouseY, 15)) {
+                    alert('Invalid placement: Objectives cannot be placed on top of terrain walls!');
+                    return;
+                }
+
+                const MIN_OBJ_SPACING_PX = 9 * PIXELS_PER_INCH;
+                for (let obj of objectives) {
+                    const dx = obj.x - mouseX;
+                    const dy = obj.y - mouseY;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < MIN_OBJ_SPACING_PX) {
+                        alert(`Invalid placement: Objectives must be more than 9 inches apart from each other!`);
+                        return;
+                    }
+                }
+
+                objectives.push({
+                    id: objectives.length + 1,
+                    x: mouseX,
+                    y: mouseY,
+                    faction: activeTurn,
+                    controlledBy: 'Neutral',
+                    contested: false
+                });
+                objectivesRemaining--;
+                const placedCount = objectives.length;
+                logBattle(`Player ${activeTurn} placed Objective #${placedCount} of ${totalObjectivesToDeploy}.`);
+                updateObjectiveTrackerUI();
+
+                if (objectivesRemaining === 0) {
+                    gamePhase = 'deployment_rolloff';
+                    document.getElementById('gamePhaseBadge').innerText = "Phase: Deployment Roll-Off";
+                    document.getElementById('objectiveCountBox').classList.add('hidden');
+                    document.getElementById('deploymentRollBox').classList.remove('hidden');
+                    logBattle(`All ${totalObjectivesToDeploy} objectives successfully placed! Moving to Deployment Roll-Off.`);
+                } else {
+                    activeTurn = activeTurn === 'P1' ? 'P2' : 'P1';
+                    updateTurnDisplay();
+                    logBattle(`Player ${activeTurn}'s turn to place an objective. (${objectivesRemaining} remaining)`);
+                    document.getElementById('gamePhaseBadge').innerText = `Phase: Placing Objectives (${placedCount}/${totalObjectivesToDeploy} placed)`;
+                }
+                return;
+            }
+
+            const clickedUnit = units.slice().reverse().find(u => {
+                const dx = u.x - mouseX;
+                const dy = u.y - mouseY;
+                return Math.sqrt(dx*dx + dy*dy) <= UNIT_RADIUS;
+            });
+
+            if (gamePhase === 'deploying' && selectedReserveId !== null) {
+                const reserveUnit = reserves.find(r => r.id === selectedReserveId);
+                if (reserveUnit) {
+                    const isP1 = reserveUnit.faction === 'P1';
+                    const minX = isP1 ? UNIT_RADIUS : TABLE_WIDTH - DEPLOYMENT_ZONE_WIDTH + UNIT_RADIUS;
+                    const maxX = isP1 ? DEPLOYMENT_ZONE_WIDTH - UNIT_RADIUS : TABLE_WIDTH - UNIT_RADIUS;
+                    const minY = UNIT_RADIUS;
+                    const maxY = TABLE_HEIGHT - UNIT_RADIUS;
+
+                    const validX = mouseX >= minX && mouseX <= maxX;
+                    const validY = mouseY >= minY && mouseY <= maxY;
+
+                    if (validX && validY) {
+                        if (checkTerrainCollision(mouseX, mouseY, UNIT_RADIUS)) {
+                            alert('Invalid deployment location: Units cannot be placed on top of terrain walls!');
+                            return;
+                        }
+                        const newUnit = {
+                            id: reserveUnit.id,
+                            name: reserveUnit.name,
+                            faction: reserveUnit.faction,
+                            x: mouseX,
+                            y: mouseY,
+                            q: reserveUnit.q,
+                            d: reserveUnit.d,
+                            t: reserveUnit.t,
+                            currentWounds: 0,
+                            weapons: reserveUnit.weapons || [],
+                            hasActivated: false,
+                            isDeploying: true,
+                            isFatigued: false,
+                            currentAction: null,
+                            staticCircle: null
+                        };
+                        units.push(newUnit);
+
+                        reserves = reserves.filter(r => r.id !== selectedReserveId);
+                        selectedReserveId = null;
+                        updateReservesUI();
+
+                        selectedUnitId = newUnit.id;
+                        updateInspector();
+                        logBattle(`Placed ${newUnit.name} token in deployment zone.`);
+                    } else {
+                        alert(`Invalid deployment location! Must be inside your 6" Kill Team deployment zone.`);
+                    }
+                }
+                return;
+            } else if (gamePhase === 'deploying' && clickedUnit) {
+                if (clickedUnit.faction !== activeTurn || clickedUnit.faction !== myRole) {
+                    alert(`It is Player ${activeTurn}'s turn to deploy!`);
+                    return;
+                }
+                selectedUnitId = clickedUnit.id;
+                isDraggingUnit = true;
+                dragStartPos = { x: clickedUnit.x, y: clickedUnit.y };
+                dragOffset.x = clickedUnit.x - mouseX;
+                dragOffset.y = clickedUnit.y - mouseY;
+                updateInspector();
+                return;
+            }
+
+            if (gamePhase === 'battle' && activeShootingWeapon && clickedUnit) {
+                const attacker = units.find(u => u.id === selectedUnitId);
+                if (clickedUnit.faction === attacker.faction) {
+                    alert('You cannot target friendly units!');
+                    return;
+                }
+
+                const dx = attacker.x - clickedUnit.x;
+                const dy = attacker.y - clickedUnit.y;
+                const distInches = Math.sqrt(dx*dx + dy*dy) / PIXELS_PER_INCH;
+
+                if (distInches > activeShootingWeapon.rng) {
+                    alert(`Target is out of range! (${Math.round(distInches)}" away, weapon range is ${activeShootingWeapon.rng}")`);
+                    return;
+                }
+
+                const losCheck = checkLineOfSightAndCover(attacker, clickedUnit);
+                if (!losCheck.hasLoS) {
+                    alert(`❌ Linha de visão bloqueada por paredes de ruína!`);
+                    logBattle(`Shot blocked: LoS from ${attacker.name} to ${clickedUnit.name} blocked by walls.`);
+                    return;
+                }
+
+                selectedTargetUnitId = clickedUnit.id;
+                initiateRangedAttack(attacker, clickedUnit, activeShootingWeapon, losCheck.hasCover);
+                return;
+            }
+
+            const attacker = units.find(u => u.id === selectedUnitId);
+            if (gamePhase === 'battle' && attacker && attacker.currentAction === 'charge' && attacker.faction === myRole && clickedUnit) {
+                if (clickedUnit.faction === attacker.faction) {
+                    alert('You cannot target friendly units!');
+                    return;
+                }
+                executeAutomaticChargeAndCombat(attacker, clickedUnit);
+                return;
+            }
+
+            if (clickedUnit) {
+                selectedUnitId = clickedUnit.id;
+                activeShootingWeapon = null;
+                selectedTargetUnitId = null;
+                units.forEach(u => { if (u.id !== selectedUnitId && u.faction === myRole) u.staticCircle = null; });
+
+                if (gamePhase === 'battle') {
+                    if (clickedUnit.hasActivated) {
+                        logBattle(`${clickedUnit.name} has already activated this round.`);
+                    } else if (clickedUnit.faction !== activeTurn || clickedUnit.faction !== myRole) {
+                        logBattle(`It is currently Player ${activeTurn}'s activation turn.`);
+                    } else if (clickedUnit.staticCircle !== null) {
+                        isDraggingUnit = true;
+                        dragStartPos = { x: clickedUnit.originalX || clickedUnit.x, y: clickedUnit.originalY || clickedUnit.y };
+                        dragOffset.x = clickedUnit.x - mouseX;
+                        dragOffset.y = clickedUnit.y - mouseY;
+                    }
+                }
+                updateInspector();
+            } else {
+                isDraggingBoard = true;
+                startPan = { x: e.clientX - camera.x, y: e.clientY - camera.y };
+            }
+        });
+
+        function updateObjectiveTrackerUI() {
+            const list = document.getElementById('objectiveTrackerList');
+            if (!list) return;
+            if (objectives.length === 0) {
+                list.innerHTML = `<div class="text-slate-500 italic">No objectives placed yet.</div>`;
+                return;
+            }
+            list.innerHTML = '';
+            objectives.forEach((obj, idx) => {
+                let p1Near = units.some(u => u.faction === 'P1' && Math.sqrt((u.x - obj.x)**2 + (u.y - obj.y)**2) <= 3 * PIXELS_PER_INCH);
+                let p2Near = units.some(u => u.faction === 'P2' && Math.sqrt((u.x - obj.x)**2 + (u.y - obj.y)**2) <= 3 * PIXELS_PER_INCH);
+                
+                let status = 'Neutral';
+                if (p1Near && !p2Near) { status = 'P1 Controlled'; obj.controlledBy = 'P1'; }
+                else if (p2Near && !p1Near) { status = 'P2 Controlled'; obj.controlledBy = 'P2'; }
+                else if (p1Near && p2Near) { status = 'Contested'; obj.controlledBy = 'Neutral'; }
+                else { status = 'Uncontested'; obj.controlledBy = 'Neutral'; }
+
+                list.innerHTML += `
+                    <div class="bg-slate-800 p-2 rounded border border-slate-700 flex justify-between items-center">
+                        <div><strong>Obj #${idx+1}</strong></div>
+                        <div class="text-[10px] px-2 py-0.5 rounded font-bold ${obj.controlledBy === 'P1' ? 'bg-blue-600 text-white' : (obj.controlledBy === 'P2' ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-300')}">${status}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function toWall(wall, px, py) {
+            const a = wall.a || 0; if (!a) return [px, py];
+            const cx = wall.x + wall.w / 2, cy = wall.y + wall.h / 2, c = Math.cos(-a), s = Math.sin(-a), dx = px - cx, dy = py - cy;
+            return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+        }
+        function wallHit(x1, y1, x2, y2, wall) {
+            const p = toWall(wall, x1, y1), q = toWall(wall, x2, y2);
+            return lineIntersectsRect(p[0], p[1], q[0], q[1], wall.x, wall.y, wall.w, wall.h);
+        }
+        function normalizeTerrain(t) {
+            if (t.local) return t;
+            const xs = t.walls.flatMap(w => [w.x, w.x + w.w]), ys = t.walls.flatMap(w => [w.y, w.y + w.h]);
+            t.px = (Math.min(...xs) + Math.max(...xs)) / 2; t.py = (Math.min(...ys) + Math.max(...ys)) / 2; t.angle = 0;
+            t.local = t.walls.map(w => ({ ox: w.x + w.w / 2 - t.px, oy: w.y + w.h / 2 - t.py, w: w.w, h: w.h }));
+            return t;
+        }
+        function rebuildTerrain(t) {
+            const r = (t.angle || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+            t.walls = t.local.map(l => { const cx = t.px + l.ox * c - l.oy * s, cy = t.py + l.ox * s + l.oy * c; return { x: cx - l.w / 2, y: cy - l.h / 2, w: l.w, h: l.h, a: r }; });
+        }
+        function terrainHit(t, x, y) {
+            return t.walls.some(w => { const [lx, ly] = toWall(w, x, y); return lx >= w.x - 8 && lx <= w.x + w.w + 8 && ly >= w.y - 8 && ly <= w.y + w.h + 8; });
+        }
+
+        function checkTerrainCollision(x, y, radius) {
+            for (let t of terrains) {
+                for (let wall of t.walls) {
+                    const [lx, ly] = toWall(wall, x, y);
+                    let closestX = Math.max(wall.x, Math.min(lx, wall.x + wall.w));
+                    let closestY = Math.max(wall.y, Math.min(ly, wall.y + wall.h));
+                    let distX = lx - closestX;
+                    let distY = ly - closestY;
+                    let distSquared = (distX * distX) + (distY * distY);
+                    
+                    if (distSquared < (radius * radius)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
+            const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+            if (denom === 0) return false;
+            const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+            const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+            return (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1);
+        }
+
+        function lineIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
+            return (
+                lineIntersectsLine(x1, y1, x2, y2, rx, ry, rx + rw, ry) || 
+                lineIntersectsLine(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh) || 
+                lineIntersectsLine(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh) || 
+                lineIntersectsLine(x1, y1, x2, y2, rx, ry, rx, ry + rh) ||
+                (x1 >= rx && x1 <= rx + rw && y1 >= ry && y1 <= ry + rh)
+            );
+        }
+
+        function checkLineOfSightAndCover(attacker, defender) {
+            let blocked = false;
+            for (let t of terrains) {
+                for (let wall of t.walls) {
+                    if (wallHit(attacker.x, attacker.y, defender.x, defender.y, wall)) {
+                        blocked = true;
+                    }
+                }
+            }
+
+            let isTouchingTerrain = false;
+            for (let t of terrains) {
+                for (let wall of t.walls) {
+                    const [dxl, dyl] = toWall(wall, defender.x, defender.y);
+                    let cx = Math.max(wall.x, Math.min(dxl, wall.x + wall.w));
+                    let cy = Math.max(wall.y, Math.min(dyl, wall.y + wall.h));
+                    let d = Math.sqrt((dxl - cx)**2 + (dyl - cy)**2);
+                    if (d <= UNIT_RADIUS) {
+                        isTouchingTerrain = true;
+                        break;
+                    }
+                }
+                if (isTouchingTerrain) break;
+            }
+
+            let samplePoints = 12;
+            let obstructedPoints = 0;
+            for (let i = 0; i < samplePoints; i++) {
+                let angle = (i / samplePoints) * Math.PI * 2;
+                let sx = defender.x + Math.cos(angle) * (UNIT_RADIUS * 0.8);
+                let sy = defender.y + Math.sin(angle) * (UNIT_RADIUS * 0.8);
+
+                let pointObstructed = false;
+                for (let t of terrains) {
+                    for (let wall of t.walls) {
+                        if (wallHit(attacker.x, attacker.y, sx, sy, wall)) {
+                            pointObstructed = true;
+                            break;
+                        }
+                    }
+                    if (pointObstructed) break;
+                }
+                if (pointObstructed) obstructedPoints++;
+            }
+
+            let obstructionRatio = obstructedPoints / samplePoints;
+            let hasCover = isTouchingTerrain || (obstructionRatio >= 0.66);
+
+            return { hasLoS: !blocked, hasCover: hasCover };
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left - camera.x) / camera.zoom;
+            const mouseY = (e.clientY - rect.top - camera.y) / camera.zoom;
+
+            if (isDraggingUnit && selectedUnitId) {
+                const u = units.find(unit => unit.id === selectedUnitId);
+                if (u) {
+                    if (gamePhase === 'deploying') {
+                        const isP1 = u.faction === 'P1';
+                        const minX = isP1 ? UNIT_RADIUS : TABLE_WIDTH - DEPLOYMENT_ZONE_WIDTH + UNIT_RADIUS;
+                        const maxX = isP1 ? DEPLOYMENT_ZONE_WIDTH - UNIT_RADIUS : TABLE_WIDTH - UNIT_RADIUS;
+                        
+                        let targetX = Math.max(minX, Math.min(maxX, mouseX + dragOffset.x));
+                        let targetY = Math.max(UNIT_RADIUS, Math.min(TABLE_HEIGHT - UNIT_RADIUS, mouseY + dragOffset.y));
+                        
+                        if (!checkTerrainCollision(targetX, targetY, UNIT_RADIUS)) {
+                            u.x = targetX;
+                            u.y = targetY;
+                        }
+                    } else if (gamePhase === 'battle' && u.staticCircle !== null && u.currentAction !== 'charge') {
+                        const c = u.staticCircle;
+                        const maxDistPx = (c.inches * PIXELS_PER_INCH) - UNIT_RADIUS;
+                        
+                        let targetX = mouseX + dragOffset.x;
+                        let targetY = mouseY + dragOffset.y;
+
+                        const dx = targetX - dragStartPos.x;
+                        const dy = targetY - dragStartPos.y;
+                        const distFromStart = Math.sqrt(dx*dx + dy*dy);
+
+                        if (distFromStart > maxDistPx) {
+                            const angle = Math.atan2(dy, dx);
+                            targetX = dragStartPos.x + Math.cos(angle) * maxDistPx;
+                            targetY = dragStartPos.y + Math.sin(angle) * maxDistPx;
+                        }
+
+                        targetX = Math.max(UNIT_RADIUS, Math.min(TABLE_WIDTH - UNIT_RADIUS, targetX));
+                        targetY = Math.max(UNIT_RADIUS, Math.min(TABLE_HEIGHT - UNIT_RADIUS, targetY));
+
+                        if (!checkTerrainCollision(targetX, targetY, UNIT_RADIUS)) {
+                            u.x = targetX;
+                            u.y = targetY;
+                            updateObjectiveTrackerUI();
+                        }
+                    }
+                }
+            } else if (isDraggingBoard) {
+                camera.x = e.clientX - startPan.x;
+                camera.y = e.clientY - startPan.y;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDraggingBoard = false;
+            isDraggingUnit = false;
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = 1.1;
+            const oldZoom = camera.zoom;
+            if (e.deltaY < 0) {
+                camera.zoom = Math.min(3, camera.zoom * zoomFactor);
+            } else {
+                camera.zoom = Math.max(0.3, camera.zoom / zoomFactor);
+            }
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            camera.x = mouseX - (mouseX - camera.x) * (camera.zoom / oldZoom);
+            camera.y = mouseY - (mouseY - camera.y) * (camera.zoom / oldZoom);
+            
+            document.getElementById('zoomLevel').innerText = Math.round(camera.zoom * 100) + '%';
+        }, { passive: false });
+
+        function executeUnitAction(actionType) {
+            if (!selectedUnitId) return;
+            const u = units.find(unit => unit.id === selectedUnitId);
+            if (!u) return;
+
+            if (u.faction !== activeTurn || u.faction !== myRole) {
+                alert(`It is Player ${activeTurn}'s turn to activate a unit!`);
+                return;
+            }
+            if (u.hasActivated) {
+                alert('This unit has already activated this round.');
+                return;
+            }
+
+            if (!u.originalX) {
+                u.originalX = u.x;
+                u.originalY = u.y;
+            } else {
+                u.x = u.originalX;
+                u.y = u.originalY;
+            }
+
+            u.currentAction = actionType;
+            let radiusInches = 0;
+            let color = '#06b6d4';
+
+            if (actionType === 'hold') {
+                radiusInches = 0;
+                u.staticCircle = null;
+                logBattle(`${u.name} selected HOLD (0" move, can shoot).`);
+            } else if (actionType === 'advance') {
+                radiusInches = 6;
+                color = '#eab308';
+                logBattle(`${u.name} selected ADVANCE (6" max move, can shoot).`);
+            } else if (actionType === 'rush') {
+                radiusInches = 12;
+                color = '#f59e0b';
+                logBattle(`${u.name} selected RUSH (12" max move, no shooting).`);
+            } else if (actionType === 'charge') {
+                radiusInches = 12;
+                color = '#ef4444';
+                logBattle(`${u.name} selected CHARGE (12" max move). Click enemy target.`);
+            }
+
+            if (actionType !== 'hold') {
+                u.staticCircle = { x: u.originalX, y: u.originalY, inches: radiusInches, color: color };
+            }
+
+            activeShootingWeapon = null;
+            selectedTargetUnitId = null;
+            highlightActionButton(actionType);
+            updateInspector();
+        }
+
+        function highlightActionButton(activeType) {
+            ['hold', 'advance', 'rush', 'charge'].forEach(type => {
+                const btn = document.getElementById(`btnAction${type.charAt(0).toUpperCase() + type.slice(1)}`);
+                if (btn) {
+                    btn.className = type === activeType ? "bg-amber-600/40 border border-amber-500 text-[11px] py-1 rounded text-left px-2 transition shadow" : "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] py-1 rounded text-left px-2 transition";
+                }
+            });
+        }
+
+        function selectWeaponForShooting(weaponName) {
+            const u = units.find(unit => unit.id === selectedUnitId);
+            if (!u) return;
+            if (u.faction !== myRole || u.faction !== activeTurn) return;
+            const weapon = u.weapons.find(w => w.name === weaponName);
+            if (!weapon) return;
+            if (weapon.rng === "Melee" || weapon.rng === "mele") {
+                alert("This is a melee weapon!");
+                return;
+            }
+            activeShootingWeapon = weapon;
+            logBattle(`${u.name} selected ${weapon.name}. Click a target unit in range and LoS.`);
+        }
+
+        function initiateRangedAttack(attacker, defender, weapon, hasCover) {
+            currentAttackData = { 
+                attacker: attacker, defender: defender, weapon: weapon, 
+                hasCover: hasCover, hits: 0, unsavedWounds: 0 
+            };
+            openAttackerModal(`Ranged Attack: ${attacker.name} -> ${defender.name} (${weapon.name})`, `
+                <div class="space-y-3">
+                    <div class="bg-slate-800 p-2.5 rounded">
+                        <div><strong>Attacker Unit:</strong> ${attacker.name} (Player ${attacker.faction})</div>
+                        <div><strong>Weapon:</strong> ${weapon.name} (RNG: ${weapon.rng}", ATK: ${weapon.atk}, AP: ${weapon.ap})</div>
+                        <div>Target Quality Target: <strong class="text-amber-400">Q${attacker.q}+</strong></div>
+                        ${hasCover ? '<div class="text-amber-400 font-bold mt-1">🛡 Target in Cover (Touching wall or ≥ 2/3 hidden!)</div>' : ''}
+                    </div>
+                    <div class="space-y-2 text-center">
+                        <h4 class="font-bold text-blue-400">Attacker Action: Roll Attacks</h4>
+                        <button id="btnAttackerRoll" onclick="executeAttackerRoll()" class="w-full bg-blue-600 hover:bg-blue-500 py-2.5 rounded text-white font-medium shadow">🎲 Roll ${weapon.atk} Attack Dice (Target Q${attacker.q}+)</button>
+                        <div id="attackerRollResult" class="text-slate-300 mt-1"></div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function executeAttackerRoll() {
+            const data = currentAttackData;
+            let hits = 0, rolls = [];
+            for (let i = 0; i < data.weapon.atk; i++) {
+                const r = Math.floor(Math.random() * 6) + 1;
+                rolls.push(r);
+                if (r >= data.attacker.q) hits++;
+            }
+            data.hits = hits;
+            document.getElementById('btnAttackerRoll').disabled = true;
+            document.getElementById('attackerRollResult').innerHTML = `
+                <div class="my-2">
+                    <div class="text-xs text-slate-400 mb-1">Rolled Dice (Target Q${data.attacker.q}+):</div>
+                    ${formatRollsHTML(rolls, data.attacker.q)}
+                </div>
+                <div class="text-green-400 font-bold text-sm my-2">Generated ${hits} Hits!</div>
+                <button onclick="passToDefenderRanged()" class="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-white font-bold shadow">Pass Turn to Defender ➡️</button>
+            `;
+        }
+
+        function passToDefenderRanged() {
+            closeAttackerModal();
+            const data = currentAttackData;
+            if (data.hits === 0) {
+                logBattle(`${data.attacker.name} shot ${data.defender.name} with ${data.weapon.name}: 0 hits scored.`);
+                finishRangedTurn(data.attacker);
+                return;
+            }
+
+            let baseDef = data.defender.d + (data.hasCover ? 1 : 0);
+            let effectiveDef = Math.min(6, baseDef + data.weapon.ap);
+
+            openDefenderModal(`Defender Turn: Defense vs ${data.attacker.name}`, `
+                <div class="space-y-3">
+                    <div class="bg-slate-800 p-2.5 rounded">
+                        <div><strong>Defender Unit:</strong> ${data.defender.name} (Player ${data.defender.faction})</div>
+                        <div>Incoming Hits to Block: <strong class="text-amber-400">${data.hits}</strong></div>
+                        <div>Defense Target: <strong class="text-blue-400">D${effectiveDef}+</strong> (Base D${data.defender.d}${data.hasCover ? ' + 1 Cover' : ''}${data.weapon.ap !== 0 ? ` + AP ${data.weapon.ap}` : ''})</div>
+                    </div>
+                    <div class="space-y-2 text-center">
+                        <h4 class="font-bold text-red-400">Defender Action: Roll Defense</h4>
+                        <button id="btnDefenderRoll" onclick="executeDefenderRangedRoll(${effectiveDef})" class="w-full bg-red-600 hover:bg-red-500 py-2.5 rounded text-white font-medium shadow">🛡 Roll ${data.hits} Defense Dice</button>
+                        <div id="defenderRollResult" class="text-slate-300 mt-1"></div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function executeDefenderRangedRoll(effectiveDef) {
+            const data = currentAttackData;
+            let blocks = 0, rolls = [];
+            for (let i = 0; i < data.hits; i++) {
+                const r = Math.floor(Math.random() * 6) + 1;
+                rolls.push(r);
+                if (r >= effectiveDef) blocks++;
+            }
+            const unsaved = Math.max(0, data.hits - blocks);
+            data.unsavedWounds = unsaved;
+
+            document.getElementById('btnDefenderRoll').disabled = true;
+            document.getElementById('defenderRollResult').innerHTML = `
+                <div class="my-2">
+                    <div class="text-xs text-slate-400 mb-1">Rolled Dice (Target D${effectiveDef}+ | Blocked: ${blocks}):</div>
+                    ${formatRollsHTML(rolls, effectiveDef)}
+                </div>
+                <div class="text-red-400 font-bold text-sm my-2">Unsaved Wounds Suffered: ${unsaved}</div>
+                <button onclick="applyRangedDamageAndResolve()" class="w-full mt-2 bg-red-700 hover:bg-red-600 py-2 rounded text-white font-bold shadow">Apply Damage & Resolve 💀</button>
+            `;
+        }
+
+        function applyRangedDamageAndResolve() {
+            const data = currentAttackData;
+            closeDefenderModal();
+            data.defender.currentWounds += data.unsavedWounds;
+            let isDead = data.defender.currentWounds >= data.defender.t;
+            logBattle(`${data.attacker.name} shot ${data.defender.name} with ${data.weapon.name}: caused ${data.unsavedWounds} wounds (Total: ${data.defender.currentWounds}/${data.defender.t}).`);
+            updateObjectiveTrackerUI();
+
+            if (isDead) {
+                units = units.filter(u => u.id !== data.defender.id);
+                logBattle(`💀 ${data.defender.name} has been destroyed!`);
+                showCasualtyModal(data.attacker, data.defender, data.unsavedWounds, 0, true, false, () => finishRangedTurn(data.attacker));
+            } else {
+                finishRangedTurn(data.attacker);
+            }
+        }
+
+        function finishRangedTurn(attacker) {
+            attacker.staticCircle = null;
+            attacker.hasActivated = true;
+            let actingFaction = attacker.faction;
+            delete attacker.originalX;
+            delete attacker.originalY;
+            selectedUnitId = null;
+            updateInspector();
+            checkRoundCompletion(actingFaction);
+        }
+
+        function executeAutomaticChargeAndCombat(attacker, defender) {
+            let startX = attacker.originalX || attacker.x;
+            let startY = attacker.originalY || attacker.y;
+            let dx = defender.x - startX;
+            let dy = defender.y - startY;
+            let totalDistPx = Math.sqrt(dx*dx + dy*dy);
+            let maxChargePx = 12 * PIXELS_PER_INCH;
+            let desiredDistPx = UNIT_RADIUS * 2; 
+
+            if (totalDistPx > maxChargePx + desiredDistPx) {
+                alert(`⚠️ Target out of charge range!`);
+                return;
+            }
+
+            attacker.x = defender.x - (dx / totalDistPx) * desiredDistPx;
+            attacker.y = defender.y - (dy / totalDistPx) * desiredDistPx;
+            logBattle(`${attacker.name} charged ${defender.name}!`);
+            initiateMeleeCombat(attacker, defender);
+        }
+
+        function initiateMeleeCombat(attacker, defender) {
+            let meleeWeapons = attacker.weapons.filter(w => w.rng === "Melee" || w.rng === "mele");
+            if (meleeWeapons.length === 0) meleeWeapons = [{ name: "Unarmed", rng: "Melee", atk: 2, ap: 0 }];
+            let defMeleeWeapons = defender.weapons.filter(w => w.rng === "Melee" || w.rng === "mele");
+            if (defMeleeWeapons.length === 0) defMeleeWeapons = [{ name: "Unarmed", rng: "Melee", atk: 2, ap: 0 }];
+
+            currentAttackData = {
+                attacker: attacker,
+                defender: defender,
+                attackerWeapons: meleeWeapons,
+                defenderWeapons: defMeleeWeapons,
+                currentWeaponIndex: 0,
+                attackerUnsavedTotal: 0,
+                defenderUnsavedTotal: 0,
+                meleeHits: 0
+            };
+            openAttackerMeleeStep();
+        }
+
+        function openAttackerMeleeStep() {
+            const data = currentAttackData;
+            let weapon = data.attackerWeapons[data.currentWeaponIndex];
+            openAttackerModal(`Melee Attack: ${data.attacker.name} vs ${data.defender.name} (${weapon.name})`, `
+                <div class="space-y-3">
+                    <div class="bg-slate-800 p-2.5 rounded">
+                        <div><strong>Attacker:</strong> ${data.attacker.name} (Q${data.attacker.q}+)</div>
+                        <div><strong>Weapon [${data.currentWeaponIndex + 1}/${data.attackerWeapons.length}]:</strong> ${weapon.name} (ATK: ${weapon.atk}, AP: ${weapon.ap})</div>
+                    </div>
+                    <div class="space-y-2 text-center">
+                        <h4 class="font-bold text-blue-400">Attacker Action: Roll Melee Attacks</h4>
+                        <button id="btnMeleeAtkRoll" onclick="executeAttackerMeleeRoll()" class="w-full bg-blue-600 hover:bg-blue-500 py-2.5 rounded text-white font-medium shadow">🎲 Roll ${weapon.atk} Melee Dice</button>
+                        <div id="meleeAtkResult" class="text-slate-300 mt-1"></div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function executeAttackerMeleeRoll() {
+            const data = currentAttackData;
+            let weapon = data.attackerWeapons[data.currentWeaponIndex];
+            let hits = 0, rolls = [];
+            for (let i = 0; i < weapon.atk; i++) {
+                const r = Math.floor(Math.random() * 6) + 1;
+                rolls.push(r);
+                if (r >= data.attacker.q) hits++;
+            }
+            data.meleeHits = hits;
+            document.getElementById('btnMeleeAtkRoll').disabled = true;
+            document.getElementById('meleeAtkResult').innerHTML = `
+                <div class="my-2">
+                    <div class="text-xs text-slate-400 mb-1">Rolled Dice (Target Q${data.attacker.q}+):</div>
+                    ${formatRollsHTML(rolls, data.attacker.q)}
+                </div>
+                <div class="text-green-400 font-bold text-sm my-2">Generated ${hits} Hits!</div>
+                <button onclick="passToDefenderMeleeDefense()" class="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-white font-bold shadow">Pass to Defender Defense ➡️</button>
+            `;
+        }
+
+        function passToDefenderMeleeDefense() {
+            closeAttackerModal();
+            const data = currentAttackData;
+            let weapon = data.attackerWeapons[data.currentWeaponIndex];
+
+            if (data.meleeHits === 0) {
+                advanceMeleeAttackerWeaponFlow();
+                return;
+            }
+
+            let effectiveDef = Math.min(6, data.defender.d + weapon.ap);
+            openDefenderModal(`Defender Melee Defense: ${data.defender.name}`, `
+                <div class="space-y-3">
+                    <div class="bg-slate-800 p-2.5 rounded">
+                        <div><strong>Defender:</strong> ${data.defender.name} (D${data.defender.d}+)</div>
+                        <div>Incoming Melee Hits: <strong class="text-amber-400">${data.meleeHits}</strong></div>
+                        <div>Defense Target: <strong class="text-blue-400">D${effectiveDef}+</strong></div>
+                    </div>
+                    <div class="space-y-2 text-center">
+                        <h4 class="font-bold text-red-400">Defender Action: Roll Defense</h4>
+                        <button id="btnDefMeleeRoll" onclick="executeDefenderMeleeRoll(${effectiveDef})" class="w-full bg-red-600 hover:bg-red-500 py-2.5 rounded text-white font-medium shadow">🛡 Roll ${data.meleeHits} Defense Dice</button>
+                        <div id="defMeleeResult" class="text-slate-300 mt-1"></div>
+                    </div>
+                </div>
+            `);
+        }
+
+        function executeDefenderMeleeRoll(effectiveDef) {
+            const data = currentAttackData;
+            let blocks = 0, rolls = [];
+            for (let i = 0; i < data.meleeHits; i++) {
+                const r = Math.floor(Math.random() * 6) + 1;
+                rolls.push(r);
+                if (r >= effectiveDef) blocks++;
+            }
+            let unsaved = Math.max(0, data.meleeHits - blocks);
+            data.attackerUnsavedTotal += unsaved;
+            data.defender.currentWounds += unsaved;
+
+            document.getElementById('btnDefMeleeRoll').disabled = true;
+            document.getElementById('defMeleeResult').innerHTML = `
+                <div class="my-2">
+                    <div class="text-xs text-slate-400 mb-1">Rolled Dice (Target D${effectiveDef}+ | Blocked: ${blocks}):</div>
+                    ${formatRollsHTML(rolls, effectiveDef)}
+                </div>
+                <div class="text-red-400 font-bold text-sm my-2">Unsaved Wounds Suffered: ${unsaved}</div>
+                <button onclick="closeDefenderModal(); advanceMeleeAttackerWeaponFlow();" class="w-full mt-2 bg-red-700 hover:bg-red-600 py-2 rounded text-white font-bold shadow">Apply & Continue ➡️</button>
+            `;
+        }
+
+        function advanceMeleeAttackerWeaponFlow() {
+            const data = currentAttackData;
+            let defenderDead = data.defender.currentWounds >= data.defender.t;
+            if (defenderDead) {
+                units = units.filter(u => u.id !== data.defender.id);
+                logBattle(`💀 ${data.defender.name} was destroyed in melee by ${data.attacker.name}!`);
+                updateObjectiveTrackerUI();
+                showCasualtyModal(data.attacker, data.defender, data.attackerUnsavedTotal, 0, true, false, () => finishRangedTurn(data.attacker));
+                return;
+            }
+
+            data.currentWeaponIndex++;
+            if (data.currentWeaponIndex < data.attackerWeapons.length) {
+                openAttackerMeleeStep();
+            } else {
+                let dx = data.attacker.x - data.defender.x;
+                let dy = data.attacker.y - data.defender.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > UNIT_RADIUS * 2) {
+                    let movePx = 3 * PIXELS_PER_INCH;
+                    data.defender.x += (dx / dist) * Math.min(dist - UNIT_RADIUS * 2, movePx);
+                    data.defender.y += (dy / dist) * Math.min(dist - UNIT_RADIUS * 2, movePx);
+                }
+                openDefenderCounterPrompt();
+            }
+        }
+
+        function openDefenderCounterPrompt() {
+            const data = currentAttackData;
+            let defWeapon = data.defenderWeapons[0];
+            openDefenderModal(`Defender Counter-Attack: ${data.defender.name}`, `
+                <div class="space-y-3">
+                    <div class="bg-slate-800 p-2.5 rounded">
+                        <div>Total Wounds Dealt to Defender: <strong class="text-amber-400">${data.attackerUnsavedTotal}</strong></div>
+                        <div class="text-xs text-slate-300 mt-1">Defender can now counter-attack (Fatigued Q6+). Weapon: ${defWeapon.name} (Atk: ${defWeapon.atk})</div>
+                    </div>
+                    <div id="counterOptionsContainer" class="space-y-2">
+                        <div class="flex space-x-2">
+                            <button id="btnExecuteCounter" onclick="executeDefenderCounterRoll(true)" class="flex-1 bg-red-600 hover:bg-red-500 py-2.5 rounded text-white font-bold shadow">⚔️ Counter-Attack</button>
+                            <button onclick="executeDefenderCounterRoll(false)" class="bg-slate-700 hover:bg-slate-600 px-4 py-2.5 rounded text-white font-medium">❌ Decline</button>
+                        </div>
+                    </div>
+                    <div id="counterRollResultsArea"></div>
+                </div>
+            `);
+        }
+
+        function executeDefenderCounterRoll(wantsCounter) {
+            const data = currentAttackData;
+            let counterResultHTML = "";
+
+            if (wantsCounter) {
+                data.defender.isFatigued = true;
+                let defQ = 6;
+                let defWeapon = data.defenderWeapons[0];
+                let hits = 0, rolls = [];
+                for (let i = 0; i < defWeapon.atk; i++) {
+                    const r = Math.floor(Math.random() * 6) + 1;
+                    rolls.push(r);
+                    if (r >= defQ) hits++;
+                }
+
+                data.counterHits = hits;
+                data.counterRolls = rolls;
+                let effectiveAttackerDef = Math.min(6, data.attacker.d + defWeapon.ap);
+                data.effectiveAttackerDef = effectiveAttackerDef;
+
+                counterResultHTML = `
+                    <div class="bg-slate-800 p-2 rounded mt-2 space-y-2 text-xs"><div class="font-bold text-red-400">Counter-attack from ${data.defender.name}!</div>
+                        <div><strong>Counter Attack Rolls (Q6+):</strong></div>
+                        ${formatRollsHTML(rolls, defQ)}
+                        <div class="text-amber-400 font-bold">${hits} Hits generated!</div>
+                        <div class="pt-2">
+                            <button id="btnAttackerCounterDefense" onclick="rollAttackerCounterDefense()" class="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded text-white font-bold shadow">🛡️ Roll Attacker Defense (D${effectiveAttackerDef}+)</button>
+                        </div>
+                        <div id="attackerCounterDefenseResult"></div>
+                    </div>
+                `;
+            } else {
+                counterResultHTML = `<div class="text-slate-400 text-xs italic mt-2">Counter-attack declined.</div>`;
+                document.getElementById('counterOptionsContainer').innerHTML = '';
+                document.getElementById('counterRollResultsArea').innerHTML = `
+                    ${counterResultHTML}
+                    <button onclick="finalizeMeleeCombatAndClose(false)" class="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-white font-bold shadow">Finish Combat & Resolve ➡️</button>
+                `;
+                return;
+            }
+
+            document.getElementById('counterOptionsContainer').innerHTML = '';
+            openAttackerModal(`Counter-attack received: ${data.attacker.name}`, counterResultHTML);
+        }
+
+        function rollAttackerCounterDefense() {
+            const data = currentAttackData;
+            let blocks = 0, blockRolls = [];
+            for (let i = 0; i < data.counterHits; i++) {
+                const r = Math.floor(Math.random() * 6) + 1;
+                blockRolls.push(r);
+                if (r >= data.effectiveAttackerDef) blocks++;
+            }
+            let counterUnsaved = Math.max(0, data.counterHits - blocks);
+            data.defenderUnsavedTotal = counterUnsaved;
+            data.attacker.currentWounds += counterUnsaved;
+
+            document.getElementById('btnAttackerCounterDefense').disabled = true;
+            document.getElementById('attackerCounterDefenseResult').innerHTML = `
+                <div class="mt-2 space-y-1">
+                    <div><strong>Attacker Defense Rolls (D${data.effectiveAttackerDef}+ | Blocked: ${blocks}):</strong></div>
+                    ${formatRollsHTML(blockRolls, data.effectiveAttackerDef)}
+                    <div class="text-red-400 font-bold">Attacker suffered ${counterUnsaved} unsaved wounds!</div>
+                    <button onclick="finalizeMeleeCombatAndClose(true)" class="w-full mt-3 bg-emerald-600 hover:bg-emerald-500 py-2 rounded text-white font-bold shadow">Finish Combat & Resolve ➡️</button>
+                </div>
+            `;
+        }
+
+        function finalizeMeleeCombatAndClose(wantsCounterBool) {
+            const data = currentAttackData;
+            closeDefenderModal(); closeAttackerModal();
+
+            let defenderDead = data.defender.currentWounds >= data.defender.t;
+            let attackerDead = data.attacker.currentWounds >= data.attacker.t;
+
+            let logMsg = `${data.attacker.name} charged ${data.defender.name}: dealt ${data.attackerUnsavedTotal} wounds.`;
+            if (wantsCounterBool === true) {
+                logMsg += ` ${data.defender.name} counter-attacked for ${data.defenderUnsavedTotal} wounds.`;
+            }
+
+            if (defenderDead) {
+                units = units.filter(u => u.id !== data.defender.id);
+                logMsg += ` 💀 ${data.defender.name} destroyed!`;
+            }
+            if (attackerDead) {
+                units = units.filter(u => u.id !== data.attacker.id);
+                logMsg += ` 💀 ${data.attacker.name} destroyed!`;
+            }
+
+            logBattle(logMsg);
+            updateObjectiveTrackerUI();
+
+            if (defenderDead || attackerDead) {
+                showCasualtyModal(data.attacker, data.defender, data.attackerUnsavedTotal, data.defenderUnsavedTotal, defenderDead, attackerDead, () => finishRangedTurn(data.attacker));
+            } else {
+                finishRangedTurn(data.attacker);
+            }
+        }
+
+        function openAttackerModal(title, html) {
+            document.getElementById('attackerModalTitle').innerText = title;
+            document.getElementById('attackerModalBody').innerHTML = html;
+            document.getElementById('attackerModal').classList.remove('hidden');
+        }
+        function closeAttackerModal() {
+            document.getElementById('attackerModal').classList.add('hidden');
+        }
+
+        function openDefenderModal(title, html) {
+            document.getElementById('defenderModalTitle').innerText = title;
+            document.getElementById('defenderModalBody').innerHTML = html;
+            document.getElementById('defenderModal').classList.remove('hidden');
+        }
+        function closeDefenderModal() {
+            document.getElementById('defenderModal').classList.add('hidden');
+        }
+
+        function showCasualtyModal(attacker, defender, woundsDealtToDefender, woundsDealtToAttacker, defenderDead, attackerDead, callback) {
+            const body = document.getElementById('casualtyModalBody');
+            body.innerHTML = `
+                <div class="space-y-3">
+                    <div class="bg-red-950/40 border border-red-900/50 p-3 rounded-lg space-y-2">
+                        <h4 class="font-bold text-red-400 text-sm">Unit Destruction Event</h4>
+                        <div class="space-y-1 text-xs">
+                            <div><strong>Attacker:</strong> ${attacker.name || 'Unit'} (${attacker.faction})</div>
+                            <div><strong>Defender:</strong> ${defender.name || 'Unit'} (${defender.faction})</div>
+                            <div class="border-t border-red-900/50 pt-1 mt-1"></div>
+                            <div>Damage to Defender: <span class="text-amber-400">${woundsDealtToDefender} wounds</span> ${defenderDead ? '<strong class="text-red-400">[DESTROYED]</strong>' : ''}</div>
+                            ${woundsDealtToAttacker > 0 ? `<div>Damage to Attacker: <span class="text-amber-400">${woundsDealtToAttacker} wounds</span>${attackerDead ? '<strong class="text-red-400">[DESTROYED]</strong>' : ''}</div>` : ''}
+                        </div>
+                    </div>
+                    <button onclick="closeCasualtyModalAndRun()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded text-xs transition shadow">Acknowledge & Continue</button>
+                </div>
+            `;
+            window.activeCasualtyCallback = callback;
+            document.getElementById('casualtyModal').classList.add('hidden');
+            document.getElementById('casualtyModal').classList.remove('hidden');
+        }
+
+        function closeCasualtyModalAndRun() {
+            document.getElementById('casualtyModal').classList.add('hidden');
+            if (typeof window.activeCasualtyCallback === 'function') {
+                const cb = window.activeCasualtyCallback;
+                window.activeCasualtyCallback = null;
+                cb();
+            }
+        }
+
+        function confirmAndPassTurn() {
+            { const su = units.find(x => x.id === selectedUnitId); if (!su || su.faction !== myRole || su.faction !== activeTurn || netBusy) return; }
+            if (!selectedUnitId) return;
+            const u = units.find(unit => unit.id === selectedUnitId);
+            if (!u) return;
+
+            if (gamePhase === 'deploying') {
+                u.isDeploying = false;
+                selectedUnitId = null;
+                updateInspector();
+                if (reserves.length === 0) {
+                    gamePhase = 'battle';
+                    document.getElementById('roundBadge').classList.remove('hidden');
+                    document.getElementById('gamePhaseBadge').innerText = "Phase: Round 1 - Battle";
+                    document.getElementById('gamePhaseBadge').className = "text-xs bg-emerald-500/25 text-emerald-400 border border-emerald-500/50 px-2.5 py-1 rounded font-semibold";
+                    document.getElementById('deploymentRollBox').classList.add('hidden');
+                    document.getElementById('battlePhaseBox').classList.remove('hidden');
+                    document.getElementById('sidebarObjCount').innerText = totalObjectivesToDeploy;
+                    updateObjectiveTrackerUI();
+                } else {
+                    { const nx = activeTurn === 'P1' ? 'P2' : 'P1'; if (reserves.some(r => r.faction === nx)) activeTurn = nx; }
+                    updateTurnDisplay();
+                }
+                return;
+            }
+
+            if (gamePhase === 'battle') {
+                if (!u.currentAction) { alert('Select an action first!'); return; }
+                if (u.currentAction === 'charge') { alert('Click enemy unit to charge.'); return; }
+                u.staticCircle = null;
+                u.hasActivated = true;
+                const actingFaction = u.faction;
+                delete u.originalX;
+                delete u.originalY;
+                selectedUnitId = null;
+                activeShootingWeapon = null;
+                selectedTargetUnitId = null;
+                updateInspector();
+                checkRoundCompletion(actingFaction);
+            }
+        }
+
+        function checkRoundCompletion(lastActingFaction) {
+            const unactivated = units.filter(u => !u.hasActivated);
+            if (unactivated.length === 0 && units.length > 0) {
+                if (currentRound >= 4) { gamePhase = 'game_over'; logBattle('🏁 Game Over after Round 4!'); return; }
+                currentRound++;
+                units.forEach(u => u.isFatigued = false);
+                document.getElementById('roundCounterNum').innerText = currentRound;
+                document.getElementById('sidebarRoundNum').innerText = currentRound;
+                units.forEach(u => u.hasActivated = false);
+                activeTurn = lastActingFaction === 'P1' ? 'P2' : 'P1';
+                updateTurnDisplay();
+            } else if (unactivated.length > 0) {
+                const nextPlayer = activeTurn === 'P1' ? 'P2' : 'P1';
+                if (unactivated.some(u => u.faction === nextPlayer)) activeTurn = nextPlayer;
+                updateTurnDisplay();
+            }
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(camera.x, camera.y);
+            ctx.scale(camera.zoom, camera.zoom);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+            if (mapBgImg) ctx.drawImage(mapBgImg, 0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
+            ctx.fillRect(0, 0, DEPLOYMENT_ZONE_WIDTH, TABLE_HEIGHT);
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+            ctx.fillRect(TABLE_WIDTH - DEPLOYMENT_ZONE_WIDTH, 0, DEPLOYMENT_ZONE_WIDTH, TABLE_HEIGHT);
+
+            objectives.forEach(obj => {
+                ctx.beginPath();
+                ctx.arc(obj.x, obj.y, 3 * PIXELS_PER_INCH, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(245, 158, 11, 0.35)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.beginPath();
+                ctx.arc(obj.x, obj.y, 18, 0, Math.PI * 2);
+                ctx.fillStyle = obj.controlledBy === 'P1' ? '#2563eb' : (obj.controlledBy === 'P2' ? '#dc2626' : '#f59e0b');
+                ctx.fill();
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+                ctx.fillStyle = '#0f172a';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`OBJ`, obj.x, obj.y + 4);
+            });
+
+            terrains.forEach(t => {
+                ctx.save();
+                // High-contrast terrain: dark, opaque fill + bright outline so ruins stay visible
+                // over both the Grass & Rocks and Industrial map backgrounds.
+                const selected = t.id === selectedTerrainId;
+                ctx.fillStyle = t.type.includes('_small') ? '#334155' : '#111827';
+                ctx.strokeStyle = selected ? '#fde047' : '#f59e0b';
+                ctx.lineWidth = selected ? 3 : 2.5;
+
+                t.walls.forEach(wall => {
+                    ctx.save();
+                    if (wall.a) { ctx.translate(wall.x + wall.w / 2, wall.y + wall.h / 2); ctx.rotate(wall.a); ctx.translate(-(wall.x + wall.w / 2), -(wall.y + wall.h / 2)); }
+                    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+                    ctx.strokeRect(wall.x, wall.y, wall.w, wall.h);
+                    ctx.restore();
+                });
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 3;
+                ctx.fillText(t.type === 'ruin_l' ? '📐 L-Ruin' : t.type === 'ruin_i' ? '📏 I-Ruin' : t.type === 'ruin_l_small' ? '⌞ Small L' : '━ Small I', t.walls[0].x + 4, t.walls[0].y - 4);
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            });
+
+            if (activeShootingWeapon && selectedUnitId) {
+                const u = units.find(unit => unit.id === selectedUnitId);
+                if (u) {
+                    ctx.beginPath();
+                    ctx.arc(u.x, u.y, activeShootingWeapon.rng * PIXELS_PER_INCH, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#38bdf8';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([6, 6]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+
+            units.forEach(u => {
+                if (u.staticCircle !== null) {
+                    const c = u.staticCircle;
+                    const radiusPixels = c.inches * PIXELS_PER_INCH;
+                    
+                    ctx.beginPath();
+                    ctx.arc(c.x, c.y, radiusPixels, 0, Math.PI * 2);
+                    ctx.strokeStyle = c.color;
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    ctx.beginPath();
+                    ctx.arc(c.x, c.y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = c.color;
+                    ctx.fill();
+                }
+            });
+
+            units.forEach(u => {
+                const isSelected = u.id === selectedUnitId;
+                
+                if (activeShootingWeapon && isSelected) {
+                    units.forEach(target => {
+                        if (target.faction !== u.faction) {
+                            const los = checkLineOfSightAndCover(u, target);
+                            ctx.beginPath();
+                            ctx.moveTo(u.x, u.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.strokeStyle = los.hasLoS ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)';
+                            ctx.lineWidth = 2;
+                            ctx.setLineDash([3, 3]);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+                    });
+                }
+
+                ctx.beginPath();
+                ctx.arc(u.x, u.y, UNIT_RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = u.hasActivated ? '#475569' : (u.faction === 'P1' ? '#2563eb' : '#dc2626');
+                ctx.fill();
+                ctx.lineWidth = isSelected ? 3.5 : 2;
+                ctx.strokeStyle = isSelected ? '#fbbf24' : '#ffffff';
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(u.name.substring(0, 10), u.x, u.y - 30);
+                ctx.font = '10px sans-serif';
+                ctx.fillStyle = u.hasActivated ? '#94a3b8' : '#cbd5e1';
+                ctx.fillText(`W:${u.currentWounds}/${u.t}`, u.x, u.y + 4);
+            });
+
+            ctx.restore();
+            requestAnimationFrame(render);
+        }
+        requestAnimationFrame(render);
+
+        function autoDeployTest() {
+            if (myRole !== 'P1') { alert('Only the host (Player 1) can use the test deploy.'); return; }
+            objectives = [
+                { id: 1, x: TABLE_WIDTH / 2, y: TABLE_HEIGHT / 2, faction: 'Neutral', controlledBy: 'Neutral', contested: false },
+                { id: 2, x: TABLE_WIDTH / 2 - 150, y: TABLE_HEIGHT / 2 - 100, faction: 'Neutral', controlledBy: 'Neutral', contested: false },
+                { id: 3, x: TABLE_WIDTH / 2 + 150, y: TABLE_HEIGHT / 2 + 100, faction: 'Neutral', controlledBy: 'Neutral', contested: false }
+            ];
+            totalObjectivesToDeploy = 3;
+            objectivesRemaining = 0;
+            units = [];
+            
+            reserves.forEach((r, idx) => {
+                let isP1 = r.faction === 'P1';
+                units.push({
+                    id: r.id, name: r.name, faction: r.faction,
+                    x: isP1 ? 100 : TABLE_WIDTH - 100,
+                    y: 120 + ((idx % 4) * 80),
+                    q: r.q, d: r.d, t: r.t, currentWounds: 0,
+                    weapons: r.weapons || [], hasActivated: false, isDeploying: false, isFatigued: false, currentAction: null, staticCircle: null
+                });
+            });
+            reserves = [];
+            updateReservesUI();
+
+            gamePhase = 'battle';
+            currentRound = 1;
+            activeTurn = 'P1';
+
+            document.getElementById('objectiveRollBox').classList.add('hidden');
+            document.getElementById('objectiveCountBox').classList.add('hidden');
+            document.getElementById('deploymentRollBox').classList.add('hidden');
+            document.getElementById('battlePhaseBox').classList.remove('hidden');
+            document.getElementById('roundBadge').classList.remove('hidden');
+            document.getElementById('gamePhaseBadge').innerText = "Phase: Round 1 - Battle";
+            document.getElementById('gamePhaseBadge').className = "text-xs bg-emerald-500/25 text-emerald-400 border border-emerald-500/50 px-2.5 py-1 rounded font-semibold";
+            document.getElementById('sidebarRoundNum').innerText = currentRound;
+            document.getElementById('sidebarObjCount').innerText = totalObjectivesToDeploy;
+
+            updateTurnDisplay();
+            updateObjectiveTrackerUI();
+            logBattle("[Auto-Deploy] Teste ativado com sucesso!");
+        }
+
+        function rollObjectiveInitiative() {
+            if (gamePhase !== 'objective_rolloff') return;
+            let rollP1 = Math.floor(Math.random() * 6) + 1;
+            let rollP2 = Math.floor(Math.random() * 6) + 1;
+            while (rollP1 === rollP2) { rollP1 = Math.floor(Math.random() * 6) + 1; rollP2 = Math.floor(Math.random() * 6) + 1; }
+            let winner = rollP1 > rollP2 ? 'P1' : 'P2';
+            activeTurn = winner;
+            document.getElementById('btnRollPlacement').disabled = true;
+            gamePhase = 'objective_count';
+            logBattle(`Placement roll-off - P1: ${rollP1} | P2: ${rollP2}. Player ${winner} places first.`);
+            document.getElementById('objectiveRollBox').classList.add('hidden');
+            document.getElementById('objectiveCountBox').classList.remove('hidden');
+            document.getElementById('objRollResult').innerHTML = `P1: ${rollP1} | P2: ${rollP2} (Winner: ${winner})`;
+            updateTurnDisplay();
+        }
+
+        function rollObjectiveCount() {
+            if (gamePhase !== 'objective_count') return;
+            const d3Roll = Math.floor(Math.random() * 3) + 1;
+            objectivesRemaining = d3Roll + 2;
+            totalObjectivesToDeploy = objectivesRemaining;
+            document.getElementById('btnRollObjCount').disabled = true;
+            document.getElementById('objCountResult').innerHTML = `Total Markers: ${objectivesRemaining}`;
+            gamePhase = 'placing_objectives';
+            document.getElementById('gamePhaseBadge').innerText = `Phase: Placing Objectives (0/${totalObjectivesToDeploy})`;
+        }
+
+        function rollDeploymentInitiative() {
+            if (gamePhase !== 'deployment_rolloff') return;
+            let rollP1 = Math.floor(Math.random() * 6) + 1;
+            let rollP2 = Math.floor(Math.random() * 6) + 1;
+            let winner = rollP1 > rollP2 ? 'P1' : 'P2';
+            activeTurn = winner;
+            gamePhase = 'deploying';
+            document.getElementById('btnRollDeployment').disabled = true;
+            logBattle(`Deployment roll-off - P1: ${rollP1} | P2: ${rollP2}. Player ${winner} deploys first.`);
+            document.getElementById('deploymentRollBox').classList.add('hidden');
+            document.getElementById('gamePhaseBadge').innerText = "Phase: Deployment (Alternating)";
+            updateTurnDisplay();
+        }
+
+        function updateTurnDisplay() {
+            document.getElementById('activePlayerLabel').innerText = `Turn: Player ${activeTurn}`;
+            document.getElementById('activePlayerLabel').className = activeTurn === 'P1' ? 'font-medium text-blue-400' : 'font-medium text-red-400';
+            document.getElementById('activePlayerDot').className = activeTurn === 'P1' ? 'w-3 h-3 rounded-full bg-blue-500 inline-block' : 'w-3 h-3 rounded-full bg-red-500 inline-block';
+        }
+
+        function toggleSpectatorMode() {
+            spectatorMode = !spectatorMode;
+            document.getElementById('spectatorBtn').innerText = `Spectator Mode: ${spectatorMode ? 'ON' : 'OFF'}`;
+        }
+
+        function setTerrainTool(type) {
+            activeTerrainTool = type;
+            ['ruin_l', 'ruin_i', 'ruin_l_small', 'ruin_i_small'].forEach(t => {
+                const btn = document.getElementById(`btn-terrain-${t}`);
+                if (btn) btn.className = t === type ? "bg-amber-600/30 p-2.5 rounded-lg text-left border border-amber-500 transition" : "bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-left border border-slate-600 transition";
+            });
+            if (!type) return;
+
+            // Clicking a terrain button adds it immediately at the center of the board.
+            // It can then be dragged into position normally.
+            if (!isHost() || gamePhase !== 'setup' || cfg.ready.P1) {
+                activeTerrainTool = null;
+                return;
+            }
+            const id = Date.now();
+            const t = normalizeTerrain({ id, type, walls: terrainWallsForType(type) });
+            t.px = TABLE_WIDTH / 2;
+            t.py = TABLE_HEIGHT / 2;
+            rebuildTerrain(t);
+            terrains.push(t);
+            selectedTerrainId = id;
+            activeTerrainTool = null;
+            ['ruin_l', 'ruin_i', 'ruin_l_small', 'ruin_i_small'].forEach(tn => {
+                const btn = document.getElementById(`btn-terrain-${tn}`);
+                if (btn) btn.className = "bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-left border border-slate-600 transition";
+            });
+            logBattle(`Added ${type} at the center of the board.`);
+        }
+
+        function updateInspector() {
+            const inspector = document.getElementById('unitInspector');
+            const content = document.getElementById('inspectorContent');
+            const actionPanel = document.getElementById('oprActionPanel');
+            const shootingPanel = document.getElementById('shootingPanel');
+            const meleeWeaponPanel = document.getElementById('meleeWeaponPanel');
+            const weaponListContainer = document.getElementById('weaponListContainer');
+            const unit = units.find(u => u.id === selectedUnitId);
+
+            if (!unit) { inspector.classList.add('hidden'); activeShootingWeapon = null; return; }
+
+            inspector.classList.remove('hidden');
+            if (gamePhase === 'battle') {
+                actionPanel.classList.remove('hidden');
+                if (unit.currentAction === 'hold' || unit.currentAction === 'advance') {
+                    shootingPanel.classList.remove('hidden');
+                    meleeWeaponPanel.classList.add('hidden');
+                    weaponListContainer.innerHTML = '';
+                    unit.weapons.filter(w => w.rng !== "Melee" && w.rng !== "mele").forEach(w => {
+                        weaponListContainer.innerHTML += `
+                            <button onclick="selectWeaponForShooting('${w.name}')" class="w-full text-left p-1.5 rounded border border-slate-700 bg-slate-800 hover:bg-slate-750">
+                                <div class="font-bold text-amber-400">${w.name}</div>
+                                <div class="text-[9px] text-slate-400">RNG: ${w.rng}" | ATK: ${w.atk}</div>
+                            </button>
+                        `;
+                    });
+                } else if (unit.currentAction === 'charge') {
+                    shootingPanel.classList.add('hidden');
+                    meleeWeaponPanel.classList.remove('hidden');
+                } else {
+                    shootingPanel.classList.add('hidden');
+                    meleeWeaponPanel.classList.add('hidden');
+                }
+            }
+            content.innerHTML = `
+                <div><strong>Name:</strong> ${unit.name}</div>
+                <div><strong>Faction:</strong> ${unit.faction}</div>
+                <div><strong>Wounds:</strong> ${unit.currentWounds} / ${unit.t}</div>
+            `;
+        }
+
+        function deleteSelectedUnit() {
+            { const su = units.find(x => x.id === selectedUnitId); if (!su || su.faction !== myRole || gamePhase !== 'deploying') { alert('You can only remove your own units during deployment.'); return; } }
+            if (!selectedUnitId) return;
+            units = units.filter(u => u.id !== selectedUnitId);
+            selectedUnitId = null;
+            document.getElementById('unitInspector').classList.add('hidden');
+            updateObjectiveTrackerUI();
+        }
+
+        function rollOPRDice() {
+            const count = parseInt(document.getElementById('diceCount').value) || 6;
+            const target = parseInt(document.getElementById('targetQuality').value) || 3;
+            let successes = 0, results = [];
+            for (let i = 0; i < count; i++) {
+                let r = Math.floor(Math.random() * 6) + 1;
+                results.push(r);
+                if (r >= target) successes++;
+            }
+            document.getElementById('diceResults').innerHTML = `
+                <div class="w-full text-center">
+                    <div class="text-xs text-slate-400 mb-1">Rolled (Target Q${target}+):</div>
+                    ${formatRollsHTML(results, target)}
+                    <div class="text-xs font-bold text-amber-400 mt-1">${successes} Successes</div>
+                </div>
+            `;
+        }
+
+        function logBattle(msg) {
+            const log = document.getElementById('battleLog');
+            if (!log) return;
+            log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+    </script>
+<script>
+(() => {
+  const S = JSON.parse(sessionStorage.getItem('vtt_session') || 'null');
+  if (!S) { location.replace('/'); return; }
+  myRole = S.role;
+  const OPP = myRole === 'P1' ? 'P2' : 'P1';
+  const names = { P1: 'Player 1', P2: 'Player 2' };
+  names[myRole] = S.nick;
+  const $ = (id) => document.getElementById(id);
+  const socket = io();
+  let ready = false, lastState = '', pendingPush = false, lastIncoming = '';
+  const MAP_PRESETS = {
+    grass: { label: 'Grass & Rocks', src: '/maps/grass-and-rocks.jpg' },
+    industrial: { label: 'Industrial', src: '/maps/industrial.jpg' }
+  };
+  let loadedMapKey = null;
+  let cfg = { mode: 'demo', tableW: FIXED_TABLE_INCHES, tableH: FIXED_TABLE_INCHES, mapKey: 'grass', ready: { P1: false, P2: false } };
+  const send = (type, payload) => socket.emit('msg', { type, payload });
+
+  // ---------- shared state ----------
+  const capture = () => JSON.stringify({ gamePhase, activeTurn, currentRound, totalObjectivesToDeploy, objectivesRemaining, objectives, reserves, units, terrains, cfg });
+  const clean = (s) => String(s).replace(/[<>&"'`\\]/g, '').slice(0, 24);
+  function apply(str) {
+    try {
+      const s = JSON.parse(str);
+      [s.reserves, s.units].forEach((a) => (a || []).forEach((o) => { o.name = clean(o.name); (o.weapons || []).forEach((w) => { w.name = clean(w.name); }); }));
+      if (s.cfg) {
+        s.cfg.mode = s.cfg.mode === 'advanced' ? 'advanced' : 'demo';
+        s.cfg.tableW = FIXED_TABLE_INCHES;
+        s.cfg.tableH = FIXED_TABLE_INCHES;
+        s.cfg.mapKey = MAP_PRESETS[s.cfg.mapKey] ? s.cfg.mapKey : 'grass';
+      }
+      if (s.gamePhase === 'setup' && gamePhase !== 'setup') return;
+      if (gamePhase === 'setup' && s.gamePhase === 'setup' && s.cfg && myRole !== 'S') {
+        // setup: each player owns their own list + ready flag, the host owns map/rules
+        s.reserves = s.reserves.filter((r) => r.faction !== myRole).concat(reserves.filter((r) => r.faction === myRole))
+          .sort((a, b) => a.faction.localeCompare(b.faction) || a.id - b.id);
+        s.cfg.ready[myRole] = cfg.ready[myRole];
+        if (myRole === 'P1') { s.terrains = terrains; s.cfg = { mode: cfg.mode, tableW: FIXED_TABLE_INCHES, tableH: FIXED_TABLE_INCHES, mapKey: cfg.mapKey, ready: s.cfg.ready }; }
+        pendingPush = true; lastIncoming = str;
+      }
+      ({ gamePhase, activeTurn, currentRound, totalObjectivesToDeploy, objectivesRemaining, objectives, reserves, units, terrains } = s);
+      if (s.cfg) cfg = s.cfg;
+      terrains.forEach(normalizeTerrain);
+      onCfg();
+      refresh();
+      lastState = capture();
+    } catch (e) { console.error('bad state', e); }
+  }
+  function flush() { const cur = capture(); if (cur !== lastState) { lastState = cur; send('sync', cur); } }
+  setInterval(() => {
+    if (!ready || netBusy || myRole === 'S') return;
+    if (myRole === 'P1' && gamePhase === 'setup' && cfg.ready.P1 && cfg.ready.P2) {
+      gamePhase = 'objective_rolloff'; selectedTerrainId = null; window.setupLocked = false;
+      logBattle(`Game start - ${cfg.mode === 'advanced' ? 'Advanced' : 'Demo'} rules, table 36"x36".`);
+    }
+    if (pendingPush) { pendingPush = false; const c = capture(); if (c !== lastIncoming) { lastState = c; refresh(); send('sync', c); return; } }
+    if (capture() !== lastState) { refresh(); flush(); }
+  }, 120);
+
+  // ---------- UI derived from state ----------
+  function refresh() {
+    const show = (id, v) => $(id).classList.toggle('hidden', !v);
+    show('objectiveRollBox', gamePhase === 'objective_rolloff');
+    show('objectiveCountBox', ['objective_count', 'placing_objectives'].includes(gamePhase));
+    show('deploymentRollBox', gamePhase === 'deployment_rolloff');
+    show('battlePhaseBox', gamePhase === 'battle');
+    show('roundBadge', gamePhase === 'battle');
+    $('btnRollObjCount').disabled = gamePhase !== 'objective_count';
+    $('objCountResult').innerText = totalObjectivesToDeploy ? `Total Markers: ${totalObjectivesToDeploy}` : 'Not rolled yet.';
+    const label = {
+      objective_rolloff: 'Placement Roll-Off', objective_count: 'Roll Objective Count',
+      placing_objectives: `Placing Objectives (${objectives.length}/${totalObjectivesToDeploy})`,
+      deployment_rolloff: 'Deployment Roll-Off', deploying: 'Deployment (Alternating)',
+      battle: `Round ${currentRound} - Battle`, game_over: 'Game Over', setup: 'Game Setup',
+    }[gamePhase] || gamePhase;
+    const b = $('gamePhaseBadge');
+    b.innerText = 'Phase: ' + label;
+    b.className = 'text-xs border px-2.5 py-1 rounded font-semibold ' + (gamePhase === 'battle'
+      ? 'bg-emerald-500/25 text-emerald-400 border-emerald-500/50' : 'bg-amber-500/20 text-amber-400 border-amber-500/50');
+    $('roundCounterNum').innerText = currentRound;
+    $('sidebarRoundNum').innerText = currentRound;
+    $('sidebarObjCount').innerText = totalObjectivesToDeploy;
+    $('p1ReservesBox').querySelector('h3').textContent = `${names.P1} reserves`.toUpperCase();
+    $('p2ReservesBox').querySelector('h3').textContent = `${names.P2} reserves`.toUpperCase();
+    document.body.dataset.role = myRole;
+    ['P1', 'P2'].forEach((f) => $(f.toLowerCase() + 'ReservesBox').classList.toggle('empty-res', !reserves.some((x) => x.faction === f)));
+    updateTurnDisplay(); updateReservesUI(); updateObjectiveTrackerUI(); updateInspector();
+    renderSetup();
+  }
+  const baseTurn = updateTurnDisplay;
+  updateTurnDisplay = function () {
+    baseTurn();
+    $('activePlayerLabel').textContent = `Turn: ${names[activeTurn]}${activeTurn === myRole ? ' (you)' : ''}`;
+  };
+
+  // ---------- waiting banner ----------
+  function busy(on, text) { netBusy = on; $('waitBanner').classList.toggle('hidden', !on); if (text) $('waitText').textContent = text; }
+  window.cancelWait = () => { busy(false); closeAttackerModal(); closeDefenderModal(); };
+  window.leaveGame = () => {
+    if (!confirm('Leave this game?')) return;
+    socket.emit('leave_room'); sessionStorage.removeItem('vtt_session'); location.href = '/';
+  };
+
+  // ---------- log relay ----------
+  const baseLog = logBattle;
+  logBattle = function (m) { baseLog(m); if (ready && myRole !== 'S') send('log', String(m)); };
+  function remoteLog(m) {
+    const d = document.createElement('div');
+    d.textContent = `[${new Date().toLocaleTimeString()}] ${String(m).slice(0, 300)}`;
+    $('battleLog').append(d); $('battleLog').scrollTop = 1e9;
+  }
+
+  // ---------- combat: each modal appears on the screen of the player who must act ----------
+  const showA = openAttackerModal, showD = openDefenderModal;
+  const packAttack = () => JSON.stringify(currentAttackData, (k, v) => ((k === 'attacker' || k === 'defender') && v && typeof v === 'object') ? v.id : v);
+  function unpackAttack(str) {
+    const d = JSON.parse(str);
+    d.attacker = units.find((u) => u.id === d.attacker);
+    d.defender = units.find((u) => u.id === d.defender);
+    return d.attacker && d.defender ? d : null;
+  }
+  const route = (kind, title, html) => {
+    const d = currentAttackData;
+    const owner = (kind === 'A' ? d.attacker : d.defender).faction;
+    if (owner === myRole) { busy(false); (kind === 'A' ? showA : showD)(title, html); return; }
+    closeAttackerModal(); closeDefenderModal();
+    flush(); // state first, then the hand-off (order is preserved)
+    send('handoff', { kind, title, html, attack: packAttack() });
+    busy(true, `Waiting for ${names[owner]}…`);
+  };
+  openAttackerModal = (t, h) => route('A', t, h);
+  openDefenderModal = (t, h) => route('D', t, h);
+
+  // Peer-supplied HTML may only contain our own simple handlers (no scripts / foreign attributes)
+  const CALL = '[A-Za-z]+\\((true|false|\\d*)\\)';
+  const HANDLER = new RegExp(`^\\s*${CALL}\\s*;?(\\s*${CALL}\\s*;?)*\\s*$`);
+  const safeHtml = (h) => typeof h === 'string'
+    && !/<\s*(script|iframe|img|svg|object|embed|link|style)|javascript:/i.test(h)
+    && [...h.matchAll(/\son\w+\s*=/g)].length === [...h.matchAll(/\son\w+\s*=\s*"([^"]*)"/g)].length
+    && [...h.matchAll(/\son\w+\s*=\s*"([^"]*)"/g)].every((m) => HANDLER.test(m[1]));
+  function receiveHandoff(p) {
+    if (!p || (p.kind !== 'A' && p.kind !== 'D') || !safeHtml(p.html)) return;
+    const d = unpackAttack(p.attack);
+    if (!d) return;
+    currentAttackData = d; busy(false);
+    (p.kind === 'A' ? showA : showD)(String(p.title), p.html);
+  }
+  const baseFinish = finishRangedTurn;
+  finishRangedTurn = function (a) {
+    baseFinish(a); busy(false); flush(); send('attack_done');
+  };
+
+  // ---------- spectators: view only ----------
+  if (myRole === 'S') ['rollObjectiveInitiative', 'rollObjectiveCount', 'rollDeploymentInitiative'].forEach((n) => { window[n] = () => {}; });
+
+  // ---------- chat ----------
+  const chatLog = $('chatLog');
+  let unread = 0;
+  function addChat(m, quiet) {
+    const row = document.createElement('div');
+    const who = document.createElement('span');
+    who.className = 'font-bold ' + ({ P1: 'text-blue-400', P2: 'text-red-400' }[m.role] || 'text-slate-400');
+    who.textContent = (m.role === 'S' ? '👁 ' : '') + m.from + ': ';
+    const txt = document.createElement('span');
+    txt.className = 'text-slate-200';
+    txt.textContent = m.text;
+    row.append(who, txt);
+    chatLog.append(row);
+    chatLog.scrollTop = 1e9;
+    if (!quiet && $('chatPanel').classList.contains('hidden')) {
+      unread++; $('chatBadge').textContent = unread; $('chatBadge').classList.remove('hidden');
+    }
+  }
+  window.toggleChat = () => {
+    const p = $('chatPanel');
+    p.classList.toggle('hidden');
+    if (!p.classList.contains('hidden')) { unread = 0; $('chatBadge').classList.add('hidden'); chatLog.scrollTop = 1e9; $('chatInput').focus(); }
+  };
+  window.sendChat = () => {
+    const i = $('chatInput'), t = i.value.trim();
+    if (!t || !ready) return;
+    socket.emit('chat', t); i.value = '';
+  };
+  $('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+  socket.on('chat', (m) => addChat(m));
+
+  // ---------- mobile: drawers, touch controls, fit-to-screen ----------
+  const small = () => innerWidth < 1024;
+  const closeDrawers = () => ['leftPanel', 'rightPanel'].forEach((id) => $(id).classList.remove('open'));
+  window.toggleDrawer = (id) => { const open = !$(id).classList.contains('open'); closeDrawers(); $(id).classList.toggle('open', open); };
+
+  const baseReset = resetZoom;
+  resetZoom = function () {
+    baseReset();
+    if (small()) {
+      const z = Math.min(canvas.width / TABLE_WIDTH, canvas.height / TABLE_HEIGHT) * 0.96;
+      camera.zoom = z;
+      camera.x = (canvas.width - TABLE_WIDTH * z) / 2;
+      camera.y = (canvas.height - TABLE_HEIGHT * z) / 2;
+    }
+    $('zoomLevel').innerText = Math.round(camera.zoom * 100) + '%';
+  };
+  resetZoom();
+  addEventListener('orientationchange', () => setTimeout(() => { resizeCanvas(); resetZoom(); }, 300));
+
+  // The game listens to mouse events; translate touches into them. Two fingers = pinch zoom + pan.
+  const fire = (type, t) => canvas.dispatchEvent(new MouseEvent(type, { clientX: t.clientX, clientY: t.clientY, bubbles: true }));
+  const pinchInfo = (e) => {
+    const [a, b] = e.touches;
+    return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2 };
+  };
+  let pinch = null, wantOpen = false;
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    closeDrawers();
+    if (e.touches.length === 2) { fire('mouseup', e.touches[0]); pinch = pinchInfo(e); }
+    else if (e.touches.length === 1 && !pinch) fire('mousedown', e.touches[0]);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (e.touches.length === 2 && pinch) {
+      const n = pinchInfo(e), r = canvas.getBoundingClientRect(), old = camera.zoom;
+      camera.zoom = Math.min(3, Math.max(0.2, old * n.d / pinch.d));
+      const px = n.cx - r.left, py = n.cy - r.top, k = camera.zoom / old;
+      camera.x = px - (px - camera.x) * k + (n.cx - pinch.cx);
+      camera.y = py - (py - camera.y) * k + (n.cy - pinch.cy);
+      $('zoomLevel').innerText = Math.round(camera.zoom * 100) + '%';
+      pinch = n;
+    } else if (e.touches.length === 1 && !pinch) fire('mousemove', e.touches[0]);
+  }, { passive: false });
+  canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (e.touches.length > 0) return;
+    if (!pinch) fire('mouseup', e.changedTouches[0]);
+    pinch = null;
+    if (wantOpen) { wantOpen = false; closeDrawers(); $('rightPanel').classList.add('open'); }
+  }, { passive: false });
+  canvas.addEventListener('touchcancel', () => { pinch = null; canvas.dispatchEvent(new MouseEvent('mouseup')); });
+
+  // On phones, open the unit panel after you tap one of your own units
+  let lastSel = null;
+  const baseInspect = updateInspector;
+  updateInspector = function () {
+    baseInspect();
+    if (small() && myRole !== 'S') {
+      if (selectedUnitId && selectedUnitId !== lastSel && units.some((u) => u.id === selectedUnitId && u.faction === myRole)) wantOpen = true;
+      lastSel = selectedUnitId;
+    }
+  };
+
+  // ---------- setup: rules mode, table size, map builder, custom lists ----------
+  const demoReserves = JSON.parse(JSON.stringify(reserves));
+  const isHost = () => myRole === 'P1';
+  const isPlayer = () => myRole === 'P1' || myRole === 'P2';
+  const modeText = { demo: 'Current simplified rules.', advanced: 'Firefight special rules are being added - behaves like Demo for now.' };
+  const EXAMPLE = { name: 'Example list', units: [
+    { name: 'Captain', quality: 3, defense: 4, tough: 3, weapons: [{ name: 'Pistol', range: 12, attacks: 2, ap: 0 }, { name: 'Power Sword', range: 'Melee', attacks: 3, ap: 1 }], rules: [] },
+    { name: 'Gunner', quality: 4, defense: 5, tough: 1, weapons: [{ name: 'Rifle', range: 24, attacks: 1, ap: 0 }, { name: 'Fists', range: 'Melee', attacks: 1, ap: 0 }] },
+  ] };
+  const err = (m) => { $('setupErr').textContent = m || ''; };
+  const hostEdit = (fn) => (...a) => {
+    if (!isHost() || gamePhase !== 'setup' || cfg.ready.P1) return;
+    err(''); try { fn(...a); } catch (e) { err(e.message); }
+  };
+  const readJson = (file) => new Promise((ok, no) => {
+    if (file.size > 1.5e6) return no(new Error('File too large.'));
+    const r = new FileReader();
+    r.onload = () => { try { ok(JSON.parse(r.result)); } catch (e) { no(new Error('Not valid JSON.')); } };
+    r.onerror = () => no(new Error('Could not read the file.'));
+    r.readAsText(file);
+  });
+  const download = (name, obj) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }));
+    a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  terrains.forEach(normalizeTerrain);
+
+  function onCfg() {
+    const dimensionsChanged = TABLE_WIDTH_INCHES !== FIXED_TABLE_INCHES || TABLE_HEIGHT_INCHES !== FIXED_TABLE_INCHES;
+    TABLE_WIDTH_INCHES = FIXED_TABLE_INCHES;
+    TABLE_HEIGHT_INCHES = FIXED_TABLE_INCHES;
+    TABLE_WIDTH = FIXED_TABLE_INCHES * PIXELS_PER_INCH;
+    TABLE_HEIGHT = FIXED_TABLE_INCHES * PIXELS_PER_INCH;
+    const key = MAP_PRESETS[cfg.mapKey] ? cfg.mapKey : 'grass';
+    if (loadedMapKey !== key || !mapBgImg) {
+      loadedMapKey = key;
+      const img = new Image();
+      img.onload = () => { mapBgImg = img; draw(); };
+      img.onerror = () => { mapBgImg = null; };
+      img.src = MAP_PRESETS[key].src;
+    }
+    if (dimensionsChanged) resetZoom();
+  }
+
+  // --- battlefield map pool (fixed 3' × 3' board) ---
+  function selectMap(key) {
+    if (!MAP_PRESETS[key]) return;
+    cfg.mapKey = key;
+    loadedMapKey = null;
+    onCfg();
+  }
+  document.querySelectorAll('[data-map]').forEach((b) => {
+    b.onclick = hostEdit(() => selectMap(b.dataset.map));
+  });
+  function renderMapPool() {
+    document.querySelectorAll('[data-map]').forEach((b) => {
+      const selected = b.dataset.map === cfg.mapKey;
+      b.classList.toggle('border-amber-500', selected);
+      b.classList.toggle('ring-1', selected);
+      b.classList.toggle('ring-amber-500', selected);
+    });
+  }
+
+  // The board size is intentionally fixed. Older imported state is normalized to 36" × 36".
+  function normalizeFixedBoard() {
+    cfg.tableW = FIXED_TABLE_INCHES;
+    cfg.tableH = FIXED_TABLE_INCHES;
+  }
+
+  // --- terrain editing ---
+  function loadStartupTerrain() {
+    if (!isHost() || gamePhase !== 'setup' || cfg.ready.P1) return;
+    terrains = startupTerrainPieces();
+    selectedTerrainId = null;
+    activeTerrainTool = null;
+    setTerrainTool(null);
+    logBattle('Loaded standard startup terrain: 12 pieces.');
+  }
+  const selT = () => terrains.find((t) => t.id === selectedTerrainId);
+  document.querySelectorAll('[data-add]').forEach((b) => {
+    b.onclick = hostEdit(() => {
+      const type = b.dataset.add, id = Date.now();
+      const walls = terrainWallsForType(type);
+      const t = normalizeTerrain({ id, type, walls });
+      t.px = TABLE_WIDTH / 2; t.py = TABLE_HEIGHT / 2; rebuildTerrain(t);
+      terrains.push(t); selectedTerrainId = id;
+    });
+  });
+  const rotate = (d) => hostEdit(() => { const t = selT(); if (!t) return; t.angle = ((t.angle || 0) + d + 360) % 360; rebuildTerrain(t); });
+  const delT = hostEdit(() => { terrains = terrains.filter((t) => t.id !== selectedTerrainId); selectedTerrainId = null; });
+  $('rotL').onclick = rotate(-15); $('rotR').onclick = rotate(15); $('rot90').onclick = rotate(90); $('delTerrain').onclick = delT;
+  addEventListener('keydown', (e) => {
+    if (gamePhase !== 'setup' || !isHost() || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (e.key === 'r' || e.key === 'R') rotate(e.shiftKey ? -15 : 15)();
+    else if (e.key === 'Delete' || e.key === 'Backspace') delT();
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (!dragTerrain) return;
+    const t = selT();
+    if (!t) { dragTerrain = null; return; }
+    const r = canvas.getBoundingClientRect();
+    t.px = Math.min(TABLE_WIDTH, Math.max(0, (e.clientX - r.left - camera.x) / camera.zoom + dragTerrain.dx));
+    t.py = Math.min(TABLE_HEIGHT, Math.max(0, (e.clientY - r.top - camera.y) / camera.zoom + dragTerrain.dy));
+    rebuildTerrain(t);
+  });
+  const endDrag = () => { dragTerrain = null; };
+  canvas.addEventListener('mouseup', endDrag); addEventListener('mouseup', endDrag);
+
+  // --- map file (layout + optional background) ---
+  function loadMap(m) {
+    if (!m || m.app !== 'kt-vtt-map' || !Array.isArray(m.terrains)) throw new Error('Not a map file.');
+    const w = Math.round(m.tableW), h = Math.round(m.tableH);
+    if (w !== FIXED_TABLE_INCHES || h !== FIXED_TABLE_INCHES) throw new Error('Map must be a fixed 3" × 3" battlefield.');
+    if (m.terrains.length > 30) throw new Error('Too many terrain pieces (max 30).');
+    const ts = m.terrains.map((t, i) => {
+      const bad = new Error('Invalid terrain piece #' + (i + 1));
+      if (!t || !['ruin_l', 'ruin_i', 'ruin_l_small', 'ruin_i_small'].includes(t.type) || !Array.isArray(t.local) || !t.local.length || t.local.length > 4 || ![t.px, t.py, t.angle].every(Number.isFinite)) throw bad;
+      const local = t.local.map((l) => {
+        if (!l || ![l.ox, l.oy, l.w, l.h].every(Number.isFinite) || l.w < 4 || l.h < 4 || l.w > 400 || l.h > 400) throw bad;
+        return { ox: l.ox, oy: l.oy, w: l.w, h: l.h };
+      });
+      const o = { id: Date.now() + i, type: t.type, px: t.px, py: t.py, angle: t.angle, local, walls: [] };
+      rebuildTerrain(o); return o;
+    });
+    cfg.tableW = FIXED_TABLE_INCHES; cfg.tableH = FIXED_TABLE_INCHES; terrains = ts; selectedTerrainId = null; onCfg();
+    if (MAP_PRESETS[m.mapKey]) selectMap(m.mapKey);
+  }
+  $('mapExport').onclick = () => download('map.json', {
+    app: 'kt-vtt-map', version: 3, tableW: FIXED_TABLE_INCHES, tableH: FIXED_TABLE_INCHES, mapKey: cfg.mapKey,
+    terrains: terrains.map((t) => ({ type: t.type, px: t.px, py: t.py, angle: t.angle || 0, local: t.local })),
+  });
+  $('mapImport').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f || !isHost() || cfg.ready.P1 || gamePhase !== 'setup') return;
+    try { loadMap(await readJson(f)); err(''); } catch (x) { err(x.message); }
+  };
+
+  // --- custom army lists ------------------------------------------------------
+  // The VTT keeps its own compact list format for backwards compatibility, but
+  // Upload List also accepts the native JSON produced by Army Forge.  Army Forge
+  // exports contain references (selectionId/selectedUpgrades) rather than the
+  // final unit profiles, so we resolve the list id through OPR's public /api/tts
+  // feed before converting it to the VTT format.
+  const OPR_TTS_URL = 'https://army-forge.onepagerules.com/api/tts';
+
+  function isArmyForgeExport(j) {
+    return !!(j && typeof j === 'object' && j.list && typeof j.list === 'object'
+      && Array.isArray(j.list.units) && (j.list.id || j.id)
+      && (j.gameSystem === 'gff' || j.list.gameSystem === 'gff'));
+  }
+
+  async function loadArmyForgeExport(j) {
+    const armyId = String(j.list?.id || j.id || '').trim();
+    if (!armyId) throw new Error('Army Forge export has no list id.');
+
+    let response;
+    try {
+      response = await fetch(`${OPR_TTS_URL}?id=${encodeURIComponent(armyId)}`, {
+        headers: { Accept: 'application/json' },
+      });
+    } catch (e) {
+      throw new Error('Could not reach Army Forge. Check your internet connection.');
+    }
+    if (!response.ok) {
+      throw new Error(`Army Forge could not load this list (HTTP ${response.status}).`);
+    }
+
+    let army;
+    try { army = await response.json(); }
+    catch (e) { throw new Error('Army Forge returned invalid data.'); }
+
+    if (!army || !Array.isArray(army.units) || !army.units.length) {
+      throw new Error('Army Forge returned no playable units for this list.');
+    }
+    return army;
+  }
+
+  function armyForgeWeaponToVtt(w, tag, k, int) {
+    const wt = `${tag} weapon ${k + 1}`;
+    const special = Array.isArray(w?.specialRules) ? w.specialRules : [];
+    const apRule = special.find((r) => String(r?.name || '').toLowerCase() === 'ap');
+    const ap = Number(apRule?.rating ?? 0);
+    const rawRange = w?.range;
+    const melee = String(w?.type || '').toLowerCase() === 'melee'
+      || String(rawRange).toLowerCase() === 'melee'
+      || Number(rawRange) === 0;
+    const count = Number.isFinite(Number(w?.count)) && Number(w.count) > 0 ? Number(w.count) : 1;
+    const multiplier = Number.isFinite(Number(w?.attacksMultiplier)) && Number(w.attacksMultiplier) > 0 ? Number(w.attacksMultiplier) : 1;
+    const baseAttacks = Number(w?.attacks);
+    const attacks = baseAttacks * count * multiplier;
+    if (!Number.isFinite(attacks)) throw new Error(`${wt} has invalid attacks.`);
+
+    // Army Forge's label already contains range, attacks and weapon special rules.
+    // Keeping that label makes rules such as Shred/Rending visible even though the
+    // current VTT combat engine only applies AP mechanically.
+    const label = String(w?.label || w?.name || `Weapon ${k + 1}`)
+      .replace(/^\s*\d+x\s+/i, '')
+      .trim();
+    return {
+      name: clean(label) || `Weapon ${k + 1}`,
+      rng: melee ? 'Melee' : int(rawRange, 1, 48, `${wt} range`),
+      atk: int(attacks, 1, 60, `${wt} attacks`),
+      ap: int(Number.isFinite(ap) ? Math.max(0, ap) : 0, 0, 4, `${wt} AP`),
+    };
+  }
+
+  function parseArmyForgePayload(army, faction) {
+    const arr = army.units;
+    if (!Array.isArray(arr) || !arr.length || arr.length > 12) throw new Error('Army Forge list must contain 1-12 units.');
+
+    const int = (v, lo, hi, what) => {
+      const n = Number(v);
+      if (v === '' || v === null || !Number.isInteger(n) || n < lo || n > hi) throw new Error(`${what} must be a whole number from ${lo} to ${hi}.`);
+      return n;
+    };
+
+    return arr.map((u, i) => {
+      const tag = `Unit ${i + 1}`;
+      if (!u || typeof u !== 'object') throw new Error(`${tag} is not an object.`);
+
+      const rules = Array.isArray(u.rules) ? u.rules : [];
+      const toughRule = rules.find((r) => String(r?.name || '').toLowerCase() === 'tough');
+      const perModelTough = Number(toughRule?.rating ?? 1);
+      const modelCount = Number(u.size ?? u.originalSize ?? 1);
+      const totalTough = perModelTough * (Number.isFinite(modelCount) && modelCount > 0 ? modelCount : 1);
+
+      // Army Forge's loadout is the resolved profile after selected upgrades.
+      // Fall back to weapons for older payloads.
+      const loadout = Array.isArray(u.loadout) && u.loadout.length ? u.loadout : (Array.isArray(u.weapons) ? u.weapons : []);
+      const weaponItems = loadout.filter((w) => Number.isFinite(Number(w?.attacks)) || Array.isArray(w?.content));
+      if (!weaponItems.length) throw new Error(`${tag}: Army Forge returned no weapons.`);
+
+      const weapons = weaponItems
+        .filter((w) => Number.isFinite(Number(w?.attacks)))
+        .slice(0, 6)
+        .map((w, k) => armyForgeWeaponToVtt(w, tag, k, int));
+      if (!weapons.length) throw new Error(`${tag}: Army Forge returned no usable weapons.`);
+
+      return {
+        id: (faction === 'P1' ? 1000 : 2000) + i,
+        name: clean(u.customName || u.name || u.genericName || '') || tag,
+        faction,
+        q: int(u.quality, 2, 6, `${tag} quality`),
+        d: int(u.defense, 2, 6, `${tag} defense`),
+        t: int(totalTough, 1, 60, `${tag} tough`),
+        weapons,
+        rules: rules
+          .filter((r) => String(r?.name || '').toLowerCase() !== 'tough')
+          .slice(0, 12)
+          .map((r) => clean(r?.label || r?.name || ''))
+          .filter(Boolean),
+        isFatigued: false,
+      };
+    });
+  }
+
+  function parseList(j, faction) {
+    const arr = Array.isArray(j) ? j : j && j.units;
+    if (!Array.isArray(arr) || !arr.length || arr.length > 12) throw new Error('needs 1-12 units under "units".');
+    const int = (v, lo, hi, what) => {
+      const n = Number(v);
+      if (v === '' || v === null || !Number.isInteger(n) || n < lo || n > hi) throw new Error(`${what} must be a whole number from ${lo} to ${hi}.`);
+      return n;
+    };
+    return arr.map((u, i) => {
+      const tag = `Unit ${i + 1}`;
+      if (!u || typeof u !== 'object') throw new Error(`${tag} is not an object.`);
+      if (!Array.isArray(u.weapons) || !u.weapons.length || u.weapons.length > 6) throw new Error(`${tag}: needs 1-6 weapons.`);
+      return {
+        id: (faction === 'P1' ? 1000 : 2000) + i, name: clean(u.name || '') || tag, faction,
+        q: int(u.quality ?? u.q, 2, 6, `${tag} quality`), d: int(u.defense ?? u.d, 2, 6, `${tag} defense`), t: int(u.tough ?? u.t, 1, 60, `${tag} tough`),
+        weapons: u.weapons.map((w, k) => {
+          const wt = `${tag} weapon ${k + 1}`, r = w && (w.range ?? w.rng);
+          return {
+            name: clean((w && w.name) || '') || `Weapon ${k + 1}`,
+            rng: String(r).toLowerCase() === 'melee' ? 'Melee' : int(r, 1, 48, `${wt} range`),
+            atk: int(w.attacks ?? w.atk, 1, 60, `${wt} attacks`), ap: int(w.ap ?? 0, 0, 4, `${wt} AP`),
+          };
+        }),
+        rules: Array.isArray(u.rules) ? u.rules.slice(0, 12).map((x) => clean(x)) : [], isFatigued: false,
+      };
+    });
+  }
+
+  async function parseUploadedList(j, faction) {
+    if (isArmyForgeExport(j)) {
+      const army = await loadArmyForgeExport(j);
+      return parseArmyForgePayload(army, faction);
+    }
+    return parseList(j, faction);
+  }
+
+  const mine = () => reserves.filter((r) => r.faction === myRole);
+  function setMyList(arr) {
+    reserves = reserves.filter((r) => r.faction !== myRole).concat(arr).sort((a, b) => a.faction.localeCompare(b.faction) || a.id - b.id);
+  }
+  $('listFile').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f || !isPlayer() || cfg.ready[myRole] || gamePhase !== 'setup') return;
+    try { setMyList(await parseUploadedList(await readJson(f), myRole)); err(''); } catch (x) { err('List error: ' + x.message); }
+  };
+  $('listDemo').onclick = () => {
+    if (!isPlayer() || cfg.ready[myRole] || gamePhase !== 'setup') return;
+    setMyList(JSON.parse(JSON.stringify(demoReserves.filter((r) => r.faction === myRole)))); err('');
+  };
+  $('listExample').onclick = () => download('example-list.json', EXAMPLE);
+  $('btnReady').onclick = () => {
+    if (!isPlayer() || gamePhase !== 'setup' || (myRole === 'P2' && !cfg.ready.P1)) return;
+    cfg.ready[myRole] = !cfg.ready[myRole]; err('');
+  };
+  $('setupMin').onclick = () => { const b = $('setupBody'); b.classList.toggle('hidden'); $('setupMin').textContent = b.classList.contains('hidden') ? '▸' : '▾'; };
+
+  function renderSetup() {
+    const on = gamePhase === 'setup';
+    $('setupCard').classList.toggle('hidden', !on);
+    window.setupLocked = isHost() && !!cfg.ready.P1;
+    if (!on) return;
+    if (myRole === 'P2' && cfg.ready.P2 && !cfg.ready.P1) cfg.ready.P2 = false; // host re-opened the map
+    const rd = cfg.ready;
+    $('setupCard').querySelectorAll('.host-only').forEach((e) => e.classList.toggle('hidden', !isHost()));
+    $('setupCard').querySelectorAll('.player-only').forEach((e) => e.classList.toggle('hidden', !isPlayer()));
+    $('setupCard').querySelectorAll('.host-only button, .host-only input').forEach((e) => { e.disabled = window.setupLocked; });
+    document.querySelectorAll('[data-mode]').forEach((b) => { b.style.background = b.dataset.mode === cfg.mode ? '#d97706' : ''; });
+    normalizeFixedBoard();
+    $('modeInfo').textContent = modeText[cfg.mode];
+    renderMapPool();
+    $('setupSummary').textContent = `Rules: ${cfg.mode === 'advanced' ? 'Advanced' : 'Demo'} · Board 3′×3′ · ${MAP_PRESETS[cfg.mapKey]?.label || 'Grass & Rocks'} · ${terrains.length} terrain pieces`
+      + (isPlayer() ? '' : ' · waiting for players to finish setup');
+    if (isPlayer()) {
+      const l = mine();
+      $('listInfo').textContent = `${l.length} units: ${l.map((u) => u.name).join(', ')}`;
+      $('listFile').disabled = $('listDemo').disabled = !!rd[myRole];
+      $('btnReady').textContent = rd[myRole] ? 'Cancel ready' : (isHost() ? 'Lock map & ready' : 'Ready');
+      $('btnReady').disabled = myRole === 'P2' && !rd.P1;
+      $('readyInfo').textContent = `${names.P1} ${rd.P1 ? '✅' : '…'} · ${names.P2} ${rd.P2 ? '✅' : '…'}` + (myRole === 'P2' && !rd.P1 ? ' (host is still editing the map)' : '');
+    }
+  }
+
+  // ---------- connection ----------
+  function status(text, color) { $('netText').textContent = text; $('netDot').className = `w-2.5 h-2.5 rounded-full inline-block ${color}`; }
+  function onRoom(r) {
+    names.P1 = r.nicks.P1 || 'Player 1'; names.P2 = r.nicks.P2 || 'Player 2';
+    names[myRole] = S.nick;
+    const eyes = (r.spectators || []).length ? ` · 👁 ${r.spectators.length}` : '';
+    if (myRole === 'S') status(`Room ${S.code} · 👁 ${names.P1} vs ${names.P2}`, 'bg-sky-500');
+    else status(`Room ${S.code} · ${names[myRole]} vs ${names[OPP]}${r.connected[OPP] ? '' : ' (offline)'}${eyes}`, r.connected[OPP] ? 'bg-emerald-500' : 'bg-amber-500');
+    refresh();
+  }
+  socket.on('room', onRoom);
+  socket.on('msg', (m) => {
+    if (!m) return;
+    if (m.type === 'sync') apply(m.payload);
+    else if (m.type === 'bg') { /* legacy background messages ignored; maps now come from the built-in pool */ }
+    else if (m.type === 'log') remoteLog(m.payload);
+    else if (m.type === 'handoff' && myRole !== 'S') receiveHandoff(m.payload);
+    else if (m.type === 'attack_done' && myRole !== 'S') { busy(false); selectedUnitId = null; activeShootingWeapon = null; updateInspector(); }
+  });
+  socket.on('disconnect', () => { ready = false; status('Reconnecting…', 'bg-red-500'); });
+  socket.on('connect', () => {
+    socket.emit('rejoin', { code: S.code, token: S.token }, (res) => {
+      if (!res.ok) { sessionStorage.removeItem('vtt_session'); location.replace('/'); return; }
+      busy(false);
+      onRoom(res);
+      chatLog.innerHTML = ''; (res.chat || []).forEach((c) => addChat(c, true));
+      if (res.state) apply(res.state);
+      else { lastState = capture(); if (myRole === 'P1') send('sync', lastState); }
+      ready = true;
+    });
+  });
+  normalizeFixedBoard();
+  onCfg();
+  refresh();
+  lastState = capture();
+})();
+
+</script>
+</body>
+</html>
